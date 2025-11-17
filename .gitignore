@@ -109,3 +109,11 @@ mirth_messages/
 *.sql
 *.dump
 !docs/*.sql  # Allow SQL files in docs (for schema examples only)
+
+# Documentation - Keep only README.md visible
+*.md
+!README.md
+!docs/BACKEND_MIRTH_INTEGRATION.md
+!docs/CODE_FLOW_DIAGRAM.md
+!docs/MIRTH_CONNECT_SETUP_GUIDE.md
+!docs/QUICK_REFERENCE.md
