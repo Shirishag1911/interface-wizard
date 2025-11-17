@@ -1,0 +1,332 @@
+/* Angular Material Theme - MUST BE FIRST */
+@use '@angular/material' as mat;
+
+/* Import Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Roboto:wght@300;400;500;700&family=Roboto+Mono:wght@400;500&display=swap');
+
+/* Material Icons */
+@import url('https://fonts.googleapis.com/icon?family=Material+Icons');
+
+@include mat.core();
+
+/* Define custom theme colors */
+$primary-palette: (
+  50: #f3f4ff,
+  100: #e8eaff,
+  200: #d1d5ff,
+  300: #aab0ff,
+  400: #8089ff,
+  500: #667eea,
+  600: #5568d3,
+  700: #4553b8,
+  800: #38409d,
+  900: #2d3282,
+  contrast: (
+    50: rgba(black, 0.87),
+    100: rgba(black, 0.87),
+    200: rgba(black, 0.87),
+    300: rgba(black, 0.87),
+    400: white,
+    500: white,
+    600: white,
+    700: white,
+    800: white,
+    900: white,
+  )
+);
+
+$accent-palette: (
+  50: #fef5ff,
+  100: #fde9ff,
+  200: #fbd3ff,
+  300: #f9b3ff,
+  400: #f593ff,
+  500: #f093fb,
+  600: #d97ce0,
+  700: #c266c5,
+  800: #ab50aa,
+  900: #943b8f,
+  contrast: (
+    50: rgba(black, 0.87),
+    100: rgba(black, 0.87),
+    200: rgba(black, 0.87),
+    300: rgba(black, 0.87),
+    400: rgba(black, 0.87),
+    500: white,
+    600: white,
+    700: white,
+    800: white,
+    900: white,
+  )
+);
+
+$my-primary: mat.define-palette($primary-palette, 500);
+$my-accent: mat.define-palette($accent-palette, 500);
+$my-warn: mat.define-palette(mat.$red-palette);
+
+$my-theme: mat.define-light-theme((
+  color: (
+    primary: $my-primary,
+    accent: $my-accent,
+    warn: $my-warn,
+  ),
+  typography: mat.define-typography-config(
+    $font-family: 'Poppins, sans-serif',
+  ),
+  density: 0,
+));
+
+@include mat.all-component-themes($my-theme);
+
+/* Dark theme */
+$my-dark-theme: mat.define-dark-theme((
+  color: (
+    primary: $my-primary,
+    accent: $my-accent,
+    warn: $my-warn,
+  ),
+  typography: mat.define-typography-config(
+    $font-family: 'Poppins, sans-serif',
+  ),
+  density: 0,
+));
+
+/* Global Styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  font-family: 'Poppins', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+}
+
+/* Light Theme (Default) */
+body.light-theme {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f9fafb;
+  --text-primary: #111827;
+  --text-secondary: #6b7280;
+  --border-color: #e5e7eb;
+  --hover-bg: #f3f4f6;
+  --active-bg: #e5e7eb;
+  --icon-color: #6b7280;
+  --card-bg: #ffffff;
+  --header-bg: #ffffff;
+  --sidebar-bg: #f9fafb;
+  --sidebar-footer-bg: #ffffff;
+  --assistant-bg: #f9fafb;
+  --input-bg: #ffffff;
+  --code-bg: #f3f4f6;
+  --code-block-bg: #1f2937;
+  --table-header-bg: #f9fafb;
+  --file-preview-bg: #f3f4f6;
+  --disabled-bg: #e5e7eb;
+  --disabled-color: #9ca3af;
+  --scrollbar-thumb: #d1d5db;
+  --scrollbar-thumb-hover: #9ca3af;
+
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+
+  @include mat.all-component-colors($my-theme);
+}
+
+/* Dark Theme */
+body.dark-theme {
+  --bg-primary: #111827;
+  --bg-secondary: #1f2937;
+  --text-primary: #f9fafb;
+  --text-secondary: #9ca3af;
+  --border-color: #374151;
+  --hover-bg: #1f2937;
+  --active-bg: #374151;
+  --icon-color: #9ca3af;
+  --card-bg: #1f2937;
+  --header-bg: #1f2937;
+  --sidebar-bg: #0f172a;
+  --sidebar-footer-bg: #1f2937;
+  --assistant-bg: #1f2937;
+  --input-bg: #1f2937;
+  --code-bg: #374151;
+  --code-block-bg: #0f172a;
+  --table-header-bg: #1f2937;
+  --file-preview-bg: #374151;
+  --disabled-bg: #374151;
+  --disabled-color: #6b7280;
+  --scrollbar-thumb: #4b5563;
+  --scrollbar-thumb-hover: #6b7280;
+
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+
+  @include mat.all-component-colors($my-dark-theme);
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 4px;
+
+  &:hover {
+    background: var(--scrollbar-thumb-hover);
+  }
+}
+
+/* Code Blocks */
+pre {
+  background-color: var(--code-block-bg) !important;
+  color: #f9fafb !important;
+  padding: 1rem;
+  border-radius: 8px;
+  overflow-x: auto;
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+code {
+  font-family: 'Roboto Mono', monospace;
+}
+
+/* Material Design Overrides */
+.mat-mdc-raised-button {
+  text-transform: none !important;
+  letter-spacing: 0.025em !important;
+  font-weight: 600 !important;
+}
+
+.mat-mdc-outlined-button {
+  text-transform: none !important;
+  letter-spacing: 0.025em !important;
+  font-weight: 600 !important;
+}
+
+.mat-mdc-button {
+  text-transform: none !important;
+  letter-spacing: 0.025em !important;
+}
+
+.mat-mdc-form-field {
+  font-family: 'Poppins', sans-serif !important;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Utility Classes */
+.fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.slide-in {
+  animation: slideIn 0.3s ease-out;
+}
+
+/* Loading Spinner */
+.spinner {
+  border: 3px solid rgba(102, 126, 234, 0.1);
+  border-top: 3px solid #667eea;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Responsive Typography */
+@media (max-width: 768px) {
+  html {
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 480px) {
+  html {
+    font-size: 13px;
+  }
+}
+
+/* Focus Styles */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #667eea;
+  outline-offset: 2px;
+}
+
+/* Selection */
+::selection {
+  background-color: #667eea;
+  color: white;
+}
+
+::-moz-selection {
+  background-color: #667eea;
+  color: white;
+}
+
+/* Print Styles */
+@media print {
+  .sidebar,
+  .chat-header,
+  .input-container {
+    display: none !important;
+  }
+
+  .messages-container {
+    overflow: visible !important;
+  }
+}
