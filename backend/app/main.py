@@ -45,6 +45,7 @@ app.add_middleware(
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     """Log all incoming requests for debugging."""
+    print(f"🔴 MIDDLEWARE CALLED: {request.method} {request.url.path}")  # Force print to console
     logger.info(f"📥 {request.method} {request.url.path}")
     logger.info(f"   Headers: {dict(request.headers)}")
     logger.info(f"   Query params: {dict(request.query_params)}")
