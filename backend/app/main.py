@@ -32,7 +32,16 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# Add request logging middleware
+# Configure CORS - MUST be first
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins_list,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Add request logging middleware - AFTER CORS
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     """Log all incoming requests for debugging."""
@@ -50,15 +59,6 @@ async def log_requests(request: Request, call_next):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"detail": f"Internal server error: {str(e)}"}
         )
-
-# Configure CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 # Include routers
 app.include_router(router, prefix="/api/v1", tags=["Interface Wizard"])
