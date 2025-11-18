@@ -1,5 +1,13 @@
 @echo off
 echo Starting Interface Wizard Backend...
 cd backend
+
+echo Activating virtual environment...
 call venv\Scripts\activate.bat
+
+echo Checking and installing dependencies...
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+
+echo Starting FastAPI server...
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
