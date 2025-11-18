@@ -1,0 +1,11 @@
+first_name,last_name,date_of_birth,gender,phone,email,address,city,state,zip_code,blood_type,allergies
+William,Turner,1965-05-12,Male,555-6001,william.turner@email.com,141 Oncology Way,Seattle,WA,98101,O+,Cisplatin
+Mary,Phillips,1958-08-20,Female,555-6002,mary.phillips@email.com,252 Cancer Drive,Spokane,WA,99201,A+,Carboplatin
+Charles,Campbell,1972-11-25,Male,555-6003,charles.campbell@email.com,363 Chemo Street,Tacoma,WA,98401,B-,Paclitaxel
+Margaret,Parker,1960-02-14,Female,555-6004,margaret.parker@email.com,474 Radiation Avenue,Vancouver,WA,98660,AB+,Doxorubicin
+Matthew,Evans,1968-06-22,Male,555-6005,matthew.evans@email.com,585 Treatment Road,Bellevue,WA,98004,O-,None
+Elizabeth,Edwards,1975-09-18,Female,555-6006,elizabeth.edwards@email.com,696 Therapy Court,Kent,WA,98030,A-,5-FU
+Anthony,Collins,1953-12-05,Male,555-6007,anthony.collins@email.com,707 Protocol Blvd,Everett,WA,98201,B+,Methotrexate
+Dorothy,Stewart,1962-03-28,Female,555-6008,dorothy.stewart@email.com,818 Remission Street,Renton,WA,98055,AB-,Iodine
+Mark,Sanchez,1970-07-16,Male,555-6009,mark.sanchez@email.com,929 Recovery Ave,Federal Way,WA,98003,O+,None
+Melissa,Morris,1985-11-09,Female,555-6010,melissa.morris@email.com,1013 Survivor Lane,Spokane Valley,WA,99206,A+,Contrast Dye

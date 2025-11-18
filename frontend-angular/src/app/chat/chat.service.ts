@@ -88,13 +88,17 @@ export class ChatService {
     const currentMessages = this.messagesSubject.value;
     this.messagesSubject.next([...currentMessages, userMessage]);
 
-    // Call the actual backend endpoint
-    const payload = {
-      command: request.content,
-      session_id: request.session_id || `session-${Date.now()}`
-    };
+    // Prepare form data for multipart/form-data upload
+    const formData = new FormData();
+    formData.append('command', request.content);
+    formData.append('session_id', request.session_id || `session-${Date.now()}`);
 
-    return this.http.post<any>(`${environment.apiUrl}/command`, payload).pipe(
+    // Add file if present
+    if (request.file) {
+      formData.append('file', request.file, request.file.name);
+    }
+
+    return this.http.post<any>(`${environment.apiUrl}/command`, formData).pipe(
       tap((response: any) => {
         // Add assistant response - response.message is the string content
         const assistantMessage: Message = {

@@ -1,0 +1,11 @@
+first_name,last_name,date_of_birth,gender,phone,email,address,city,state,zip_code,blood_type,allergies
+Dorothy,Mitchell,1940-06-15,Female,555-2001,dorothy.m@email.com,101 Senior Lane,Chicago,IL,60601,O+,Penicillin;Sulfa
+Harold,Campbell,1938-03-22,Male,555-2002,harold.c@email.com,202 Retirement Dr,Naperville,IL,60540,A+,Aspirin
+Evelyn,Parker,1945-11-08,Female,555-2003,evelyn.p@email.com,303 Assisted St,Aurora,IL,60505,B-,Codeine;Morphine
+Walter,Evans,1942-09-30,Male,555-2004,walter.e@email.com,404 Memory Ave,Rockford,IL,61101,AB+,Iodine
+Irene,Edwards,1947-04-17,Female,555-2005,irene.e@email.com,505 Golden Rd,Peoria,IL,61602,O-,None
+Frank,Collins,1941-12-05,Male,555-2006,frank.c@email.com,606 Elder Ct,Joliet,IL,60435,A-,Latex
+Helen,Stewart,1944-07-28,Female,555-2007,helen.s@email.com,707 Aged Blvd,Elgin,IL,60120,B+,NSAIDs
+Arthur,Morris,1939-02-14,Male,555-2008,arthur.m@email.com,808 Wise St,Waukegan,IL,60085,AB-,Contrast Dye
+Ruth,Rogers,1946-10-20,Female,555-2009,ruth.r@email.com,909 Experience Ave,Cicero,IL,60804,O+,None
+Albert,Reed,1943-05-11,Male,555-2010,albert.r@email.com,1010 Veteran Ln,Schaumburg,IL,60193,A+,Statins

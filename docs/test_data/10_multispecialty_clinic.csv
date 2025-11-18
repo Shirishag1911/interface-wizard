@@ -1,0 +1,11 @@
+first_name,last_name,date_of_birth,gender,phone,email,address,city,state,zip_code,blood_type,allergies
+Alexander,Perry,1968-01-15,Male,555-1001,alexander.perry@email.com,181 Clinic Way,New York,NY,10001,O+,Penicillin;Amoxicillin
+Samantha,Powell,1975-04-20,Female,555-1002,samantha.powell@email.com,292 Healthcare Drive,Buffalo,NY,14201,A+,Sulfa drugs
+Nicholas,Long,1982-07-25,Male,555-1003,nicholas.long@email.com,303 Wellness Street,Rochester,NY,14601,B-,Aspirin;NSAIDs
+Victoria,Patterson,1990-10-30,Female,555-1004,victoria.patterson@email.com,414 Medical Avenue,Yonkers,NY,10701,AB+,Latex;Adhesive
+Justin,Hughes,1963-01-14,Male,555-1005,justin.hughes@email.com,525 Treatment Road,Syracuse,NY,13201,O-,Codeine;Morphine
+Rebecca,Flores,1985-05-22,Female,555-1006,rebecca.flores@email.com,636 Diagnosis Court,Albany,NY,12201,A-,Iodine;Shellfish
+Aaron,Washington,1978-08-18,Male,555-1007,aaron.washington@email.com,747 Prevention Blvd,New Rochelle,NY,10801,B+,Contrast Dye
+Nicole,Butler,1992-11-05,Female,555-1008,nicole.butler@email.com,858 Primary Street,Mount Vernon,NY,10550,AB-,Peanuts;Tree Nuts
+Jordan,Simmons,1970-02-28,Male,555-1009,jordan.simmons@email.com,969 Specialty Ave,Schenectady,NY,12301,O+,None
+Alexis,Foster,1995-06-16,Female,555-1010,alexis.foster@email.com,1017 Outreach Lane,Utica,NY,13501,A+,Eggs;Milk;Soy

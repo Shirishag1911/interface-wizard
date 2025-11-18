@@ -1,0 +1,11 @@
+first_name,last_name,date_of_birth,gender,phone,email,address,city,state,zip_code,blood_type,allergies
+Ashley,Rogers,1992-03-10,Female,555-7001,ashley.rogers@email.com,151 Maternity Way,Denver,CO,80201,O+,None
+Amanda,Reed,1988-06-25,Female,555-7002,amanda.reed@email.com,262 Labor Drive,Colorado Springs,CO,80901,A+,Penicillin
+Brittany,Cook,1995-09-30,Female,555-7003,brittany.cook@email.com,373 Delivery Street,Aurora,CO,80010,B-,None
+Christina,Morgan,1990-12-14,Female,555-7004,christina.morgan@email.com,484 Prenatal Avenue,Fort Collins,CO,80521,AB+,Latex
+Danielle,Bell,1993-02-18,Female,555-7005,danielle.bell@email.com,595 Obstetric Road,Lakewood,CO,80226,O-,None
+Emily,Murphy,1991-05-22,Female,555-7006,emily.murphy@email.com,606 Pregnancy Court,Thornton,CO,80229,A-,Sulfa drugs
+Hannah,Bailey,1994-08-28,Female,555-7007,hannah.bailey@email.com,717 Postpartum Blvd,Arvada,CO,80001,B+,None
+Jessica,Rivera,1989-11-05,Female,555-7008,jessica.rivera@email.com,828 Antenatal Street,Westminster,CO,80030,AB-,Iodine
+Lauren,Cooper,1996-01-20,Female,555-7009,lauren.cooper@email.com,939 Newborn Ave,Pueblo,CO,81001,O+,None
+Rachel,Richardson,1987-04-16,Female,555-7010,rachel.richardson@email.com,1014 Midwife Lane,Centennial,CO,80112,A+,Epidural

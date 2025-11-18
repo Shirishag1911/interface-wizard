@@ -1,0 +1,9 @@
+mrn,first_name,last_name,middle_name,date_of_birth,gender,ssn,address,city,state,zip_code,phone,email,blood_type,allergies
+MRN001,Sarah,Davis,Ann,1988-11-17,Female,123-45-6789,987 Cedar Ln,Aurora,IL,60505,555-0106,sarah.davis@email.com,A-,Sulfa drugs
+MRN002,David,Martinez,Lee,1975-04-05,Male,234-56-7890,147 Birch St,Joliet,IL,60435,555-0107,d.martinez@email.com,B+,Aspirin
+MRN003,Lisa,Garcia,Marie,1992-09-20,Female,345-67-8901,258 Walnut Ave,Elgin,IL,60120,555-0108,lisa.garcia@email.com,O+,None
+MRN004,James,Wilson,Robert,1980-06-12,Male,456-78-9012,369 Spruce Ct,Waukegan,IL,60085,555-0109,j.wilson@email.com,A+,Codeine
+MRN005,Maria,Rodriguez,Elena,1987-01-30,Female,567-89-0123,741 Ash Blvd,Cicero,IL,60804,555-0110,maria.r@email.com,AB-,Iodine
+MRN006,Christopher,Taylor,James,1991-05-25,Male,678-90-1234,852 Oak St,Schaumburg,IL,60193,555-0111,c.taylor@email.com,O-,Penicillin;Amoxicillin
+MRN007,Amanda,Anderson,Lynn,1986-10-14,Female,789-01-2345,963 Pine Ave,Evanston,IL,60201,555-0112,amanda.a@email.com,B-,Latex;Morphine
+MRN008,Daniel,Thomas,Paul,1993-02-08,Male,890-12-3456,159 Maple Dr,Skokie,IL,60076,555-0113,d.thomas@email.com,AB+,None

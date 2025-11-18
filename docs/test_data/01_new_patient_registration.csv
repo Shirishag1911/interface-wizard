@@ -1,0 +1,11 @@
+first_name,last_name,date_of_birth,gender,phone,email,address,city,state,zip_code,blood_type,allergies
+Rajesh,Kumar,1985-03-15,Male,555-1001,rajesh.kumar@email.com,120 Main Street,Houston,TX,77001,O+,Penicillin
+Priya,Sharma,1990-07-22,Female,555-1002,priya.sharma@email.com,456 Oak Avenue,Dallas,TX,75201,A+,None
+Amit,Patel,1978-11-30,Male,555-1003,amit.patel@email.com,789 Elm Street,Austin,TX,78701,B-,Sulfa drugs
+Sneha,Reddy,1995-05-18,Female,555-1004,sneha.reddy@email.com,321 Pine Road,San Antonio,TX,78205,AB+,Latex
+Vikram,Singh,1982-09-25,Male,555-1005,vikram.singh@email.com,654 Maple Drive,Fort Worth,TX,76102,O-,None
+Anjali,Desai,1988-12-10,Female,555-1006,anjali.desai@email.com,987 Cedar Lane,El Paso,TX,79901,A-,Aspirin
+Arjun,Mehta,1992-04-08,Male,555-1007,arjun.mehta@email.com,147 Birch Street,Arlington,TX,76010,B+,Codeine
+Kavita,Joshi,1986-08-14,Female,555-1008,kavita.joshi@email.com,258 Walnut Avenue,Plano,TX,75023,AB-,Iodine
+Rohit,Verma,1980-02-28,Male,555-1009,rohit.verma@email.com,369 Spruce Court,Irving,TX,75038,O+,None
+Pooja,Gupta,1993-06-20,Female,555-1010,pooja.gupta@email.com,741 Ash Boulevard,Lubbock,TX,79401,A+,Peanuts;Shellfish

@@ -98,7 +98,7 @@ const ChatInputComponent: React.FC<ChatInputComponentProps> = ({
               type="file"
               onChange={handleFileSelect}
               style={{ display: 'none' }}
-              accept="image/*,.pdf,.txt,.doc,.docx"
+              accept=".csv,image/*,.pdf,.txt,.doc,.docx"
             />
 
             <div className="textarea-wrapper">

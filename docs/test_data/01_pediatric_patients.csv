@@ -1,0 +1,11 @@
+first_name,last_name,date_of_birth,gender,phone,email,address,city,state,zip_code,blood_type,allergies
+Emma,Thompson,2015-03-12,Female,555-1001,emma.parent@email.com,100 Kids Lane,Chicago,IL,60601,O+,None
+Liam,Anderson,2018-07-20,Male,555-1002,liam.parent@email.com,200 Playground Dr,Naperville,IL,60540,A+,Peanuts
+Olivia,Martinez,2012-11-05,Female,555-1003,olivia.parent@email.com,300 School St,Aurora,IL,60505,B+,None
+Noah,Taylor,2016-01-18,Male,555-1004,noah.parent@email.com,400 Park Ave,Rockford,IL,61101,AB-,Latex;Adhesive
+Ava,Jackson,2014-09-22,Female,555-1005,ava.parent@email.com,500 Garden Rd,Peoria,IL,61602,O-,Eggs
+Ethan,White,2017-05-30,Male,555-1006,ethan.parent@email.com,600 Maple Ct,Joliet,IL,60435,A-,None
+Sophia,Harris,2013-12-14,Female,555-1007,sophia.parent@email.com,700 Oak Blvd,Elgin,IL,60120,B-,Milk;Soy
+Mason,Clark,2019-04-08,Male,555-1008,mason.parent@email.com,800 Pine St,Waukegan,IL,60085,AB+,None
+Isabella,Lewis,2011-08-25,Female,555-1009,isabella.parent@email.com,900 Cedar Ave,Cicero,IL,60804,O+,Shellfish
+Lucas,Robinson,2020-02-16,Male,555-1010,lucas.parent@email.com,1000 Birch Ln,Schaumburg,IL,60193,A+,None

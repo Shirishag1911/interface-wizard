@@ -1,0 +1,11 @@
+first_name,last_name,date_of_birth,gender,phone,email,address,city,state,zip_code,blood_type,allergies
+Michael,Chen,1975-01-12,Male,555-2001,michael.chen@email.com,100 Hospital Lane,Chicago,IL,60601,O+,None
+Sarah,Johnson,1988-06-25,Female,555-2002,sarah.johnson@email.com,200 Clinic Drive,Naperville,IL,60540,A+,Penicillin
+David,Williams,1970-11-08,Male,555-2003,david.williams@email.com,300 Medical Street,Aurora,IL,60505,B-,Aspirin;NSAIDs
+Jennifer,Brown,1992-03-30,Female,555-2004,jennifer.brown@email.com,400 Health Avenue,Rockford,IL,61101,AB+,Latex
+Robert,Davis,1965-09-17,Male,555-2005,robert.davis@email.com,500 Wellness Road,Peoria,IL,61602,O-,None
+Lisa,Miller,1983-12-22,Female,555-2006,lisa.miller@email.com,600 Care Court,Joliet,IL,60435,A-,Sulfa drugs
+James,Wilson,1978-04-05,Male,555-2007,james.wilson@email.com,700 Treatment Blvd,Elgin,IL,60120,B+,Codeine
+Maria,Martinez,1990-08-18,Female,555-2008,maria.martinez@email.com,800 OPD Street,Waukegan,IL,60085,AB-,Iodine
+Christopher,Anderson,1972-02-14,Male,555-2009,christopher.anderson@email.com,900 Outpatient Ave,Cicero,IL,60804,O+,None
+Amanda,Taylor,1995-07-28,Female,555-2010,amanda.taylor@email.com,1000 Emergency Lane,Schaumburg,IL,60193,A+,Eggs;Milk

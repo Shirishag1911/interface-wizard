@@ -1,0 +1,8 @@
+first_name,last_name,date_of_birth,gender,phone,email,blood_type,allergies
+Paul,Wright,1987-05-20,Male,555-0401,paul.wright@email.com,O+,Penicillin;Amoxicillin;Cephalosporin
+Betty,Lopez,1991-08-15,Female,555-0402,betty.lopez@email.com,A+,Peanuts;Tree Nuts;Shellfish
+Mark,Hill,1983-11-30,Male,555-0403,mark.hill@email.com,B-,Latex;Adhesive Tape
+Dorothy,Scott,1979-03-18,Female,555-0404,dorothy.scott@email.com,AB+,Aspirin;Ibuprofen;NSAIDs
+Steven,Green,1996-07-22,Male,555-0405,steven.green@email.com,O-,Sulfa Drugs;Trimethoprim
+Carol,Adams,1984-12-05,Female,555-0406,carol.adams@email.com,A-,Codeine;Morphine;Opioids
+Edward,Baker,1988-09-10,Male,555-0407,edward.baker@email.com,B+,Contrast Dye;Iodine

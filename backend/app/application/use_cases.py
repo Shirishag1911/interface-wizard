@@ -44,13 +44,19 @@ class ProcessCommandUseCase:
         self.context_repo = context_repo
         self.message_repo = message_repo
 
-    async def execute(self, raw_command: str, session_id: Optional[str] = None) -> OperationResult:
+    async def execute(
+        self,
+        raw_command: str,
+        session_id: Optional[str] = None,
+        csv_patients: Optional[List[Patient]] = None
+    ) -> OperationResult:
         """
         Execute the command processing use case.
 
         Args:
             raw_command: Natural language command from user
             session_id: Optional session ID for context
+            csv_patients: Optional list of patients parsed from CSV file
 
         Returns:
             OperationResult with execution status and details
@@ -62,6 +68,18 @@ class ProcessCommandUseCase:
                 context = await self.context_repo.get_context(session_id)
             if not context:
                 context = ConversationContext(session_id=session_id or "")
+
+            # Handle CSV upload directly without NLP interpretation
+            if csv_patients:
+                logger.info(f"Processing {len(csv_patients)} patients from CSV upload")
+                result = await self._handle_csv_upload(csv_patients, raw_command)
+
+                # Save context and operation result
+                context.add_operation_result(result)
+                await self.context_repo.save_context(context)
+                await self.operation_repo.save_operation(result)
+
+                return result
 
             # Interpret the command using NLP
             logger.info(f"Interpreting command: {raw_command}")
@@ -410,5 +428,87 @@ class ProcessCommandUseCase:
                 message="Failed to discharge patient",
                 errors=[str(e)],
                 protocol_used=Protocol.HL7V2,
+                completed_at=datetime.utcnow(),
+            )
+
+    async def _handle_csv_upload(self, patients: List[Patient], raw_command: str) -> OperationResult:
+        """Handle bulk patient creation from CSV upload."""
+        try:
+            total_count = len(patients)
+            succeeded = 0
+            failed = 0
+            errors = []
+            warnings = []
+
+            logger.info(f"Processing {total_count} patients from CSV upload")
+
+            for index, patient in enumerate(patients, start=1):
+                try:
+                    # Generate MRN if not provided
+                    if not patient.mrn:
+                        import uuid
+                        patient.mrn = f"CSV{uuid.uuid4().hex[:8].upper()}"
+
+                    # Create HL7 message for patient
+                    hl7_message = await self.hl7_service.create_patient_message(patient)
+                    sent_message = await self.hl7_service.send_message(hl7_message)
+                    await self.message_repo.save_message(sent_message)
+
+                    # Check ACK status
+                    if sent_message.ack_status == "AA":
+                        succeeded += 1
+                        logger.debug(f"Successfully created patient {index}/{total_count}: {patient.first_name} {patient.last_name}")
+                    else:
+                        failed += 1
+                        error_msg = f"Row {patient.metadata.get('csv_row', index)}: {patient.first_name} {patient.last_name} - {sent_message.ack_message}"
+                        errors.append(error_msg)
+                        logger.warning(error_msg)
+
+                except Exception as e:
+                    failed += 1
+                    error_msg = f"Row {patient.metadata.get('csv_row', index)}: {str(e)}"
+                    errors.append(error_msg)
+                    logger.error(f"Error creating patient {index}/{total_count}: {str(e)}")
+
+            # Determine overall status
+            if failed == 0:
+                status = OperationStatus.SUCCESS
+                message = f"Successfully created all {succeeded} patients from CSV file"
+            elif succeeded == 0:
+                status = OperationStatus.FAILED
+                message = f"Failed to create all {total_count} patients from CSV file"
+            else:
+                status = OperationStatus.PARTIAL_SUCCESS
+                message = f"Created {succeeded} out of {total_count} patients from CSV file ({failed} failed)"
+
+            return OperationResult(
+                command_id=raw_command[:50],
+                status=status,
+                message=message,
+                data={
+                    "total_patients": total_count,
+                    "successful": succeeded,
+                    "failed": failed,
+                    "source": "csv_upload"
+                },
+                errors=errors[:10],  # Limit to first 10 errors
+                warnings=warnings,
+                protocol_used=Protocol.HL7V2,
+                records_affected=total_count,
+                records_succeeded=succeeded,
+                records_failed=failed,
+                completed_at=datetime.utcnow(),
+            )
+
+        except Exception as e:
+            logger.error(f"Error processing CSV upload: {str(e)}", exc_info=True)
+            return OperationResult(
+                command_id=raw_command[:50],
+                status=OperationStatus.FAILED,
+                message=f"Failed to process CSV upload: {str(e)}",
+                errors=[str(e)],
+                protocol_used=Protocol.HL7V2,
+                records_affected=len(patients) if patients else 0,
+                records_failed=len(patients) if patients else 0,
                 completed_at=datetime.utcnow(),
             )

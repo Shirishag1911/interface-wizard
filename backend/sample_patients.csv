@@ -1,0 +1,11 @@
+first_name,last_name,date_of_birth,gender,phone,email,address,city,state,zip_code,blood_type,allergies
+John,Doe,1985-05-15,Male,555-0101,john.doe@email.com,123 Main St,Springfield,IL,62701,O+,Penicillin
+Jane,Smith,1990-08-22,Female,555-0102,jane.smith@email.com,456 Oak Ave,Chicago,IL,60601,A+,None
+Michael,Johnson,1978-12-03,Male,555-0103,m.johnson@email.com,789 Elm St,Peoria,IL,61602,B-,Peanuts;Shellfish
+Emily,Williams,1995-03-10,Female,555-0104,emily.w@email.com,321 Pine Rd,Rockford,IL,61101,AB+,Latex
+Robert,Brown,1982-07-28,Male,555-0105,rob.brown@email.com,654 Maple Dr,Naperville,IL,60540,O-,None
+Sarah,Davis,1988-11-17,Female,555-0106,sarah.davis@email.com,987 Cedar Ln,Aurora,IL,60505,A-,Sulfa drugs
+David,Martinez,1975-04-05,Male,555-0107,d.martinez@email.com,147 Birch St,Joliet,IL,60435,B+,Aspirin
+Lisa,Garcia,1992-09-20,Female,555-0108,lisa.garcia@email.com,258 Walnut Ave,Elgin,IL,60120,O+,None
+James,Wilson,1980-06-12,Male,555-0109,j.wilson@email.com,369 Spruce Ct,Waukegan,IL,60085,A+,Codeine
+Maria,Rodriguez,1987-01-30,Female,555-0110,maria.r@email.com,741 Ash Blvd,Cicero,IL,60804,AB-,Iodine

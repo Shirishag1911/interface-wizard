@@ -1,7 +1,7 @@
 """API routes for Interface Wizard."""
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from loguru import logger
 
 from app.config import settings
@@ -10,6 +10,7 @@ from app.presentation.dependencies import (
     get_process_command_use_case,
     get_context_repository,
     get_operation_repository,
+    get_csv_service,
 )
 from app.presentation.schemas import (
     CommandRequest,
@@ -17,6 +18,7 @@ from app.presentation.schemas import (
     HealthResponse,
     SessionResponse,
     ErrorResponse,
+    CSVUploadResponse,
 )
 
 router = APIRouter()
@@ -34,22 +36,56 @@ async def health_check():
 
 @router.post("/command", response_model=OperationResponse)
 async def process_command(
-    request: CommandRequest,
+    command: str = Form(...),
+    session_id: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
     use_case: ProcessCommandUseCase = Depends(get_process_command_use_case),
+    csv_service = Depends(get_csv_service),
 ):
     """
-    Process a natural language command.
+    Process a natural language command with optional CSV file upload.
 
     This is the main endpoint where users submit their commands.
     The system will interpret the command, execute the appropriate action,
     and return the result.
+
+    If a CSV file is provided, it will be processed and patients will be created from the CSV data.
     """
     try:
-        logger.info(f"Processing command: {request.command} (session: {request.session_id})")
+        logger.info(f"Processing command: {command} (session: {session_id}, file: {file.filename if file else None})")
+
+        # Handle CSV file upload
+        csv_patients = None
+        if file and file.filename and file.filename.endswith('.csv'):
+            logger.info(f"Processing CSV file: {file.filename}")
+            try:
+                # Read CSV content
+                csv_content = await file.read()
+
+                # Parse CSV to patients
+                csv_patients = csv_service.parse_csv(csv_content)
+                logger.info(f"Parsed {len(csv_patients)} patients from CSV file")
+
+                # Override command to indicate bulk patient creation from CSV
+                if not command.strip() or command.strip().lower() == "upload csv":
+                    command = f"Create {len(csv_patients)} patients from uploaded CSV file"
+
+            except ValueError as ve:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid CSV file: {str(ve)}",
+                )
+            except Exception as e:
+                logger.error(f"Error processing CSV file: {str(e)}", exc_info=True)
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to process CSV file: {str(e)}",
+                )
 
         result = await use_case.execute(
-            raw_command=request.command,
-            session_id=request.session_id,
+            raw_command=command,
+            session_id=session_id,
+            csv_patients=csv_patients,
         )
 
         return OperationResponse(
@@ -67,6 +103,8 @@ async def process_command(
             completed_at=result.completed_at,
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error processing command: {str(e)}", exc_info=True)
         raise HTTPException(

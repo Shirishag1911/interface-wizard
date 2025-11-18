@@ -131,18 +131,18 @@ Just type your request below and I'll help you!`,
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content,
+      content: file ? `${content} [File: ${file.name}]` : content,
       created_at: new Date().toISOString(),
     };
     setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
 
     try {
-      // Call the actual backend endpoint
+      // Call the actual backend endpoint with file support
       const response = await apiService.processCommand({
-        command: content,
+        command: content || 'Process uploaded file',
         session_id: currentSession?.id || `session-${Date.now()}`
-      });
+      }, file);
 
       // Add assistant response
       const assistantMessage: Message = {

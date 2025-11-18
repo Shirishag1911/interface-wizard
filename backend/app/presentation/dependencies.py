@@ -6,6 +6,7 @@ from app.infrastructure.nlp_service import OpenAINLPService
 from app.infrastructure.hl7_service import HL7v2Service
 from app.infrastructure.fhir_service import FHIRAPIService
 from app.infrastructure.data_generator import FakerDataGenerator
+from app.infrastructure.csv_service import CSVProcessingService
 from app.infrastructure.repositories import (
     InMemoryMessageRepository,
     InMemoryOperationRepository,
@@ -18,6 +19,7 @@ _nlp_service = None
 _hl7_service = None
 _fhir_service = None
 _data_generator = None
+_csv_service = None
 _message_repo = None
 _operation_repo = None
 _context_repo = None
@@ -53,6 +55,14 @@ def get_data_generator() -> FakerDataGenerator:
     if _data_generator is None:
         _data_generator = FakerDataGenerator()
     return _data_generator
+
+
+def get_csv_service() -> CSVProcessingService:
+    """Get CSV processing service instance."""
+    global _csv_service
+    if _csv_service is None:
+        _csv_service = CSVProcessingService()
+    return _csv_service
 
 
 def get_message_repository() -> InMemoryMessageRepository:

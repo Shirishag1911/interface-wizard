@@ -1,0 +1,11 @@
+first_name,last_name,date_of_birth,gender,phone,email,address,city,state,zip_code,blood_type,allergies
+Richard,Scott,1952-06-10,Male,555-5001,richard.scott@email.com,131 Heart Lane,Phoenix,AZ,85001,O+,Aspirin
+Barbara,Green,1960-09-25,Female,555-5002,barbara.green@email.com,242 Cardiac Drive,Tucson,AZ,85701,A+,Statins
+Joseph,Adams,1945-12-30,Male,555-5003,joseph.adams@email.com,353 Coronary Street,Mesa,AZ,85201,B-,Beta Blockers
+Susan,Baker,1968-03-17,Female,555-5004,susan.baker@email.com,464 Valve Avenue,Chandler,AZ,85224,AB+,ACE Inhibitors
+Timothy,Gonzalez,1955-07-22,Male,555-5005,timothy.gonzalez@email.com,575 Artery Road,Glendale,AZ,85301,O-,None
+Jessica,Nelson,1972-11-05,Female,555-5006,jessica.nelson@email.com,686 Vascular Court,Scottsdale,AZ,85251,A-,Warfarin
+Larry,Carter,1948-02-18,Male,555-5007,larry.carter@email.com,797 Pulse Blvd,Gilbert,AZ,85233,B+,Heparin
+Michelle,Mitchell,1963-06-28,Female,555-5008,michelle.mitchell@email.com,808 Rhythm Street,Tempe,AZ,85281,AB-,Clopidogrel
+Frank,Perez,1958-10-14,Male,555-5009,frank.perez@email.com,919 Pressure Ave,Peoria,AZ,85345,O+,None
+Shirley,Roberts,1970-04-08,Female,555-5010,shirley.roberts@email.com,1012 Circulation Lane,Surprise,AZ,85374,A+,Nitrates

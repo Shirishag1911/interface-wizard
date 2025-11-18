@@ -43,9 +43,27 @@ class ApiService {
   }
 
   /**
-   * Send a command to the backend for processing
+   * Send a command to the backend for processing with optional file upload
    */
-  async processCommand(request: CommandRequest): Promise<OperationResponse> {
+  async processCommand(request: CommandRequest, file?: File): Promise<OperationResponse> {
+    // If file is provided, use FormData for multipart/form-data
+    if (file) {
+      const formData = new FormData();
+      formData.append('command', request.command);
+      if (request.session_id) {
+        formData.append('session_id', request.session_id);
+      }
+      formData.append('file', file, file.name);
+
+      const response = await this.client.post<OperationResponse>('/command', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      return response.data;
+    }
+
+    // Otherwise, use JSON
     const response = await this.client.post<OperationResponse>('/command', request);
     return response.data;
   }

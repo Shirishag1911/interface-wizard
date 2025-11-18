@@ -59,3 +59,16 @@ class ErrorResponse(BaseModel):
     error: str
     detail: Optional[str] = None
     timestamp: datetime
+
+
+class CSVUploadResponse(BaseModel):
+    """CSV upload validation response."""
+    valid: bool
+    message: str
+    headers: Optional[List[str]] = None
+    row_count: Optional[int] = None
+    mapped_fields: Optional[List[str]] = None
+    unmapped_headers: Optional[List[str]] = None
+    has_required_fields: Optional[bool] = None
+    warnings: List[str] = []
+    error: Optional[str] = None
