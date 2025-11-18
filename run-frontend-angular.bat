@@ -1,38 +1,60 @@
 @echo off
+setlocal enabledelayedexpansion
+
 echo ========================================
 echo Starting Interface Wizard - Angular Frontend
 echo ========================================
+echo.
 
-echo Checking for Node.js installation...
-node --version >nul 2>&1
-if %errorlevel% neq 0 (
-    echo ERROR: Node.js is not installed!
+echo [1/4] Checking for Node.js installation...
+where node >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] Node.js is not installed!
     echo Please install Node.js from https://nodejs.org/
     echo Recommended version: 18.x or higher
     pause
     exit /b 1
 )
 
-echo Node.js found:
+echo [OK] Node.js is installed
 node --version
 npm --version
-
 echo.
-echo Navigating to Angular frontend directory...
-cd frontend-angular
 
-echo.
-echo Checking if node_modules exists...
-if not exist "node_modules\" (
-    echo node_modules not found. Installing dependencies...
-    npm install
-) else (
-    echo node_modules found. Updating dependencies...
-    npm install
+echo [2/4] Navigating to Angular frontend directory...
+if not exist "frontend-angular" (
+    echo [ERROR] frontend-angular directory not found!
+    pause
+    exit /b 1
 )
+cd frontend-angular
+echo [OK] Changed to frontend-angular directory
+echo.
 
+echo [3/4] Installing/updating dependencies...
+if not exist "node_modules" (
+    echo node_modules not found. Running npm install...
+    call npm install
+    if errorlevel 1 (
+        echo [ERROR] npm install failed!
+        pause
+        exit /b 1
+    )
+) else (
+    echo node_modules exists. Checking for updates...
+    call npm install
+)
+echo [OK] Dependencies ready
 echo.
-echo Starting Angular development server...
-echo Server will be available at http://localhost:4200
+
+echo [4/4] Starting Angular development server...
 echo.
-npm start
+echo ========================================
+echo Server will be available at:
+echo http://localhost:4200
+echo ========================================
+echo.
+echo Press Ctrl+C to stop the server
+echo.
+
+call npm start
