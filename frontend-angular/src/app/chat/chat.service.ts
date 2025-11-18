@@ -101,6 +101,13 @@ export class ChatService {
       formData.append('file', request.file, request.file.name);
     }
 
+    // Debug: Log what we're sending
+    console.log('Sending FormData with:', {
+      command: commandText,
+      session_id: request.session_id || `session-${Date.now()}`,
+      file: request.file ? request.file.name : null
+    });
+
     return this.http.post<any>(`${environment.apiUrl}/command`, formData).pipe(
       tap((response: any) => {
         // Add assistant response - response.message is the string content
