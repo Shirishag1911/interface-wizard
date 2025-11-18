@@ -1,60 +1,38 @@
 @echo off
-setlocal enabledelayedexpansion
-
 echo ========================================
 echo Starting Interface Wizard - React Frontend
 echo ========================================
-echo.
 
-echo [1/4] Checking for Node.js installation...
-where node >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] Node.js is not installed!
+echo Checking for Node.js installation...
+node --version >nul 2>&1
+if %errorlevel% neq 0 (
+    echo ERROR: Node.js is not installed!
     echo Please install Node.js from https://nodejs.org/
     echo Recommended version: 18.x or higher
     pause
     exit /b 1
 )
 
-echo [OK] Node.js is installed
+echo Node.js found:
 node --version
 npm --version
-echo.
 
-echo [2/4] Navigating to React frontend directory...
-if not exist "frontend-react" (
-    echo [ERROR] frontend-react directory not found!
-    pause
-    exit /b 1
-)
+echo.
+echo Navigating to React frontend directory...
 cd frontend-react
-echo [OK] Changed to frontend-react directory
-echo.
 
-echo [3/4] Installing/updating dependencies...
-if not exist "node_modules" (
-    echo node_modules not found. Running npm install...
-    call npm install
-    if errorlevel 1 (
-        echo [ERROR] npm install failed!
-        pause
-        exit /b 1
-    )
+echo.
+echo Checking if node_modules exists...
+if not exist "node_modules\" (
+    echo node_modules not found. Installing dependencies...
+    npm install
 ) else (
-    echo node_modules exists. Checking for updates...
-    call npm install
+    echo node_modules found. Updating dependencies...
+    npm install
 )
-echo [OK] Dependencies ready
-echo.
 
-echo [4/4] Starting React development server...
 echo.
-echo ========================================
-echo Server will be available at:
-echo http://localhost:3000
-echo ========================================
+echo Starting React development server...
+echo Server will be available at http://localhost:3000
 echo.
-echo Press Ctrl+C to stop the server
-echo.
-
-call npm start
+npm start
