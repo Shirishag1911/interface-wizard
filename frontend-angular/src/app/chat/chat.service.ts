@@ -90,7 +90,10 @@ export class ChatService {
 
     // Prepare form data for multipart/form-data upload
     const formData = new FormData();
-    formData.append('command', request.content);
+
+    // If file is present but no content, provide default command
+    const commandText = request.content || (request.file ? 'Process uploaded file' : '');
+    formData.append('command', commandText);
     formData.append('session_id', request.session_id || `session-${Date.now()}`);
 
     // Add file if present

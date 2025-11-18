@@ -60,7 +60,7 @@ export class ChatComponent implements OnInit, OnDestroy {
 
   constructor() {
     this.messageForm = this.fb.group({
-      content: ['', Validators.required]
+      content: ['']
     });
   }
 
@@ -114,12 +114,14 @@ export class ChatComponent implements OnInit, OnDestroy {
   }
 
   onSubmit(): void {
-    if (this.messageForm.valid && !this.isLoading) {
-      const content = this.messageForm.value.content.trim();
-      if (!content) return;
+    if (!this.isLoading) {
+      const content = this.messageForm.value.content?.trim() || '';
+
+      // Allow submission if either content exists OR a file is selected
+      if (!content && !this.selectedFile) return;
 
       const request = {
-        content,
+        content: content || 'Process uploaded file',
         session_id: this.currentSession?.id,
         file: this.selectedFile || undefined
       };
