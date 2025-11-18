@@ -51,10 +51,20 @@ async def process_command(
 
     If a CSV file is provided, it will be processed and patients will be created from the CSV data.
     """
+    # Log incoming request details for debugging
+    logger.info("=" * 80)
+    logger.info("INCOMING REQUEST to /command endpoint")
+    logger.info(f"  Command: {command!r}")
+    logger.info(f"  Session ID: {session_id!r}")
+    logger.info(f"  File: {file.filename if file else None}")
+    logger.info(f"  Content Type: {file.content_type if file else None}")
+    logger.info("=" * 80)
+
     try:
         # Ensure command has a value, even if not provided
         if not command:
             command = ""
+            logger.warning("Command is empty, using empty string")
 
         logger.info(f"Processing command: {command} (session: {session_id}, file: {file.filename if file else None})")
 

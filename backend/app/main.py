@@ -1,8 +1,9 @@
 """Main FastAPI application."""
 import sys
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from loguru import logger
 
 from app.config import settings
@@ -30,6 +31,25 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+# Add request logging middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log all incoming requests for debugging."""
+    logger.info(f"📥 {request.method} {request.url.path}")
+    logger.info(f"   Headers: {dict(request.headers)}")
+    logger.info(f"   Query params: {dict(request.query_params)}")
+
+    try:
+        response = await call_next(request)
+        logger.info(f"📤 Response status: {response.status_code}")
+        return response
+    except Exception as e:
+        logger.error(f"❌ Request failed: {str(e)}", exc_info=True)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": f"Internal server error: {str(e)}"}
+        )
 
 # Configure CORS
 app.add_middleware(
