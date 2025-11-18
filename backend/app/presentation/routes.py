@@ -36,7 +36,7 @@ async def health_check():
 
 @router.post("/command", response_model=OperationResponse)
 async def process_command(
-    command: str = Form(...),
+    command: Optional[str] = Form(None),
     session_id: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
     use_case: ProcessCommandUseCase = Depends(get_process_command_use_case),
@@ -52,6 +52,10 @@ async def process_command(
     If a CSV file is provided, it will be processed and patients will be created from the CSV data.
     """
     try:
+        # Ensure command has a value, even if not provided
+        if not command:
+            command = ""
+
         logger.info(f"Processing command: {command} (session: {session_id}, file: {file.filename if file else None})")
 
         # Handle CSV file upload
