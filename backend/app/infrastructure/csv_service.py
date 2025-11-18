@@ -1,6 +1,6 @@
 """
-CSV Processing Service for Interface Wizard
-Handles CSV file parsing and conversion to Patient entities
+CSV/Excel/PDF Processing Service for Interface Wizard
+Handles file parsing and conversion to Patient entities
 """
 import csv
 import io
@@ -311,3 +311,153 @@ class CSVProcessingService:
                 'valid': False,
                 'error': str(e)
             }
+
+    def parse_excel(self, excel_content: bytes, file_ext: str = 'xlsx') -> List[Patient]:
+        """
+        Parse Excel file content and convert to Patient entities
+
+        Args:
+            excel_content: Raw Excel file bytes
+            file_ext: File extension ('xlsx' or 'xls')
+
+        Returns:
+            List of Patient entities parsed from Excel
+
+        Raises:
+            ValueError: If Excel format is invalid or required fields are missing
+        """
+        try:
+            import openpyxl
+            import xlrd
+
+            # Parse Excel file based on format
+            if file_ext == 'xlsx':
+                # Modern Excel format (.xlsx)
+                wb = openpyxl.load_workbook(io.BytesIO(excel_content), read_only=True)
+                sheet = wb.active
+
+                # Extract headers from first row
+                headers = [cell.value for cell in sheet[1]]
+
+                # Extract data rows
+                rows = []
+                for row in sheet.iter_rows(min_row=2, values_only=True):
+                    row_dict = {headers[i]: row[i] for i in range(len(headers)) if i < len(row)}
+                    rows.append(row_dict)
+
+            elif file_ext == 'xls':
+                # Legacy Excel format (.xls)
+                wb = xlrd.open_workbook(file_contents=excel_content)
+                sheet = wb.sheet_by_index(0)
+
+                # Extract headers from first row
+                headers = [sheet.cell_value(0, col) for col in range(sheet.ncols)]
+
+                # Extract data rows
+                rows = []
+                for row_idx in range(1, sheet.nrows):
+                    row_dict = {headers[col]: sheet.cell_value(row_idx, col) for col in range(sheet.ncols)}
+                    rows.append(row_dict)
+
+            else:
+                raise ValueError(f"Unsupported Excel format: .{file_ext}")
+
+            logger.info(f"Excel headers detected: {headers}")
+
+            # Build column mapping
+            column_mapping = self._build_column_mapping(headers)
+            logger.info(f"Column mapping: {column_mapping}")
+
+            # Parse rows
+            patients = []
+            for row_num, row in enumerate(rows, start=2):  # Start at 2 (header is row 1)
+                try:
+                    # Convert to string dictionary
+                    row_str = {k: str(v) if v is not None else '' for k, v in row.items()}
+                    patient = self._parse_patient_row(row_str, column_mapping, row_num)
+                    if patient:
+                        patients.append(patient)
+                except Exception as e:
+                    logger.warning(f"Skipping row {row_num}: {str(e)}")
+                    continue
+
+            logger.info(f"Successfully parsed {len(patients)} patients from Excel")
+            return patients
+
+        except ImportError as e:
+            raise ValueError(f"Required library not installed for Excel support: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error parsing Excel: {str(e)}")
+            raise ValueError(f"Failed to parse Excel file: {str(e)}")
+
+    def parse_pdf(self, pdf_content: bytes) -> List[Patient]:
+        """
+        Parse PDF file content and extract patient data
+
+        Args:
+            pdf_content: Raw PDF file bytes
+
+        Returns:
+            List of Patient entities parsed from PDF
+
+        Raises:
+            ValueError: If PDF format is invalid or no data can be extracted
+        """
+        try:
+            import pdfplumber
+
+            # Open PDF
+            with pdfplumber.open(io.BytesIO(pdf_content)) as pdf:
+                all_rows = []
+
+                # Extract tables from all pages
+                for page_num, page in enumerate(pdf.pages, 1):
+                    tables = page.extract_tables()
+
+                    if not tables:
+                        # Try extracting text and parsing it
+                        text = page.extract_text()
+                        logger.warning(f"Page {page_num}: No tables found, extracted text instead")
+                        continue
+
+                    # Process first table on the page (assuming patient data is in tables)
+                    for table in tables:
+                        if table and len(table) > 1:  # Must have headers and data
+                            headers = table[0]
+                            for row in table[1:]:
+                                if len(row) == len(headers):
+                                    row_dict = {headers[i]: row[i] or '' for i in range(len(headers))}
+                                    all_rows.append(row_dict)
+
+                if not all_rows:
+                    raise ValueError("No tabular patient data found in PDF")
+
+                logger.info(f"Extracted {len(all_rows)} rows from PDF")
+
+                # Use the first row's keys as headers
+                headers = list(all_rows[0].keys())
+                logger.info(f"PDF headers detected: {headers}")
+
+                # Build column mapping
+                column_mapping = self._build_column_mapping(headers)
+                logger.info(f"Column mapping: {column_mapping}")
+
+                # Parse rows
+                patients = []
+                for row_num, row in enumerate(all_rows, start=2):
+                    try:
+                        patient = self._parse_patient_row(row, column_mapping, row_num)
+                        if patient:
+                            patients.append(patient)
+                    except Exception as e:
+                        logger.warning(f"Skipping row {row_num}: {str(e)}")
+                        continue
+
+                logger.info(f"Successfully parsed {len(patients)} patients from PDF")
+                return patients
+
+        except ImportError as e:
+            raise ValueError(f"Required library not installed for PDF support: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error parsing PDF: {str(e)}")
+            raise ValueError(f"Failed to parse PDF file: {str(e)}")

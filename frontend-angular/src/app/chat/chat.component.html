@@ -135,23 +135,24 @@
             </div>
 
             <div class="input-row">
-              <button
-                mat-icon-button
-                type="button"
-                class="attach-button"
-                (click)="triggerFileInput()"
-                matTooltip="Attach file">
-                <mat-icon>attach_file</mat-icon>
-              </button>
-
               <input
                 type="file"
                 #fileInput
                 (change)="onFileSelected($event)"
                 style="display: none"
-                accept=".csv,image/*,.pdf,.txt,.doc,.docx">
+                accept=".csv,.xlsx,.xls,.pdf">
 
               <mat-form-field appearance="outline" class="message-input">
+                <button
+                  mat-icon-button
+                  matPrefix
+                  type="button"
+                  class="attach-button-inside"
+                  (click)="triggerFileInput()"
+                  matTooltip="Attach CSV, Excel, or PDF file">
+                  <mat-icon>attach_file</mat-icon>
+                </button>
+
                 <textarea
                   matInput
                   formControlName="content"

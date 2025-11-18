@@ -439,6 +439,7 @@ class ProcessCommandUseCase:
             failed = 0
             errors = []
             warnings = []
+            patient_details = []  # Store first 5 successful patients for summary
 
             logger.info(f"Processing {total_count} patients from CSV upload")
 
@@ -458,6 +459,17 @@ class ProcessCommandUseCase:
                     if sent_message.ack_status == "AA":
                         succeeded += 1
                         logger.debug(f"Successfully created patient {index}/{total_count}: {patient.first_name} {patient.last_name}")
+
+                        # Store first 5 successful patients for detailed summary
+                        if len(patient_details) < 5:
+                            patient_details.append({
+                                "name": f"{patient.first_name} {patient.last_name}",
+                                "mrn": patient.mrn,
+                                "dob": str(patient.date_of_birth) if patient.date_of_birth else "N/A",
+                                "gender": patient.gender or "N/A",
+                                "diagnosis": patient.metadata.get("primary_diagnosis") or patient.metadata.get("scenario") or "General Care",
+                                "allergies": ", ".join(patient.allergies) if patient.allergies else "None"
+                            })
                     else:
                         failed += 1
                         error_msg = f"Row {patient.metadata.get('csv_row', index)}: {patient.first_name} {patient.last_name} - {sent_message.ack_message}"
@@ -470,16 +482,33 @@ class ProcessCommandUseCase:
                     errors.append(error_msg)
                     logger.error(f"Error creating patient {index}/{total_count}: {str(e)}")
 
-            # Determine overall status
+            # Determine overall status and create detailed message
             if failed == 0:
                 status = OperationStatus.SUCCESS
-                message = f"Successfully created all {succeeded} patients from CSV file"
+                summary = f"Successfully processed and added all {succeeded} patients to the system! 🎉"
             elif succeeded == 0:
                 status = OperationStatus.FAILED
-                message = f"Failed to create all {total_count} patients from CSV file"
+                summary = f"Unfortunately, all {total_count} patient records failed to process. Please check the CSV format."
             else:
                 status = OperationStatus.PARTIAL_SUCCESS
-                message = f"Created {succeeded} out of {total_count} patients from CSV file ({failed} failed)"
+                summary = f"Processed {succeeded} out of {total_count} patients successfully. {failed} records encountered issues."
+
+            # Build detailed message with patient preview
+            if patient_details:
+                message_parts = [summary, "\n\n**Patient Records Created:**\n"]
+                for idx, p in enumerate(patient_details, 1):
+                    message_parts.append(f"\n{idx}. **{p['name']}** (MRN: {p['mrn']})")
+                    message_parts.append(f"   - Date of Birth: {p['dob']}")
+                    message_parts.append(f"   - Gender: {p['gender']}")
+                    message_parts.append(f"   - Diagnosis/Condition: {p['diagnosis']}")
+                    message_parts.append(f"   - Allergies: {p['allergies']}")
+
+                if succeeded > 5:
+                    message_parts.append(f"\n\n...and {succeeded - 5} more patients successfully created.")
+
+                message = "".join(message_parts)
+            else:
+                message = summary
 
             return OperationResult(
                 command_id=raw_command[:50],
@@ -489,7 +518,8 @@ class ProcessCommandUseCase:
                     "total_patients": total_count,
                     "successful": succeeded,
                     "failed": failed,
-                    "source": "csv_upload"
+                    "source": "csv_upload",
+                    "patient_preview": patient_details
                 },
                 errors=errors[:10],  # Limit to first 10 errors
                 warnings=warnings,

@@ -68,32 +68,45 @@ async def process_command(
 
         logger.info(f"Processing command: {command} (session: {session_id}, file: {file.filename if file else None})")
 
-        # Handle CSV file upload
+        # Handle file upload (CSV, Excel, PDF)
         csv_patients = None
-        if file and file.filename and file.filename.endswith('.csv'):
-            logger.info(f"Processing CSV file: {file.filename}")
+        if file and file.filename:
+            file_ext = file.filename.lower().split('.')[-1]
+            logger.info(f"Processing {file_ext.upper()} file: {file.filename}")
+
             try:
-                # Read CSV content
-                csv_content = await file.read()
+                # Read file content
+                file_content = await file.read()
 
-                # Parse CSV to patients
-                csv_patients = csv_service.parse_csv(csv_content)
-                logger.info(f"Parsed {len(csv_patients)} patients from CSV file")
+                # Parse based on file type
+                if file_ext == 'csv':
+                    csv_patients = csv_service.parse_csv(file_content)
+                elif file_ext in ['xlsx', 'xls']:
+                    csv_patients = csv_service.parse_excel(file_content, file_ext)
+                elif file_ext == 'pdf':
+                    csv_patients = csv_service.parse_pdf(file_content)
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Unsupported file type: .{file_ext}. Supported types: CSV, Excel (.xlsx, .xls), PDF",
+                    )
 
-                # Override command to indicate bulk patient creation from CSV
-                if not command.strip() or command.strip().lower() == "upload csv":
-                    command = f"Create {len(csv_patients)} patients from uploaded CSV file"
+                logger.info(f"Parsed {len(csv_patients)} patients from {file_ext.upper()} file")
+
+                # Override command to indicate bulk patient creation
+                if not command.strip():
+                    command = f"Create {len(csv_patients)} patients from uploaded {file_ext.upper()} file"
 
             except ValueError as ve:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Invalid CSV file: {str(ve)}",
+                    detail=f"Invalid {file_ext.upper()} file: {str(ve)}",
                 )
             except Exception as e:
-                logger.error(f"Error processing CSV file: {str(e)}", exc_info=True)
+                logger.error(f"Error processing {file_ext.upper()} file: {str(e)}", exc_info=True)
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Failed to process CSV file: {str(e)}",
+                    detail=f"Failed to process {file_ext.upper()} file: {str(e)}",
                 )
 
         result = await use_case.execute(

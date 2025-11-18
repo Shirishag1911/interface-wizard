@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from loguru import logger
 
 from app.config import settings
@@ -32,7 +33,32 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# Configure CORS - MUST be first
+# Define logging middleware class
+class LoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        """Log all incoming requests for debugging."""
+        print(f"🔴 MIDDLEWARE CALLED: {request.method} {request.url.path}")
+        logger.info(f"📥 {request.method} {request.url.path}")
+        logger.info(f"   Headers: {dict(request.headers)}")
+        logger.info(f"   Query params: {dict(request.query_params)}")
+
+        try:
+            response = await call_next(request)
+            print(f"📤 Response status: {response.status_code}")
+            logger.info(f"📤 Response status: {response.status_code}")
+            return response
+        except Exception as e:
+            logger.error(f"❌ Request failed: {str(e)}", exc_info=True)
+            print(f"❌ Request failed: {str(e)}")
+            return JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content={"detail": f"Internal server error: {str(e)}"}
+            )
+
+# Add logging middleware FIRST
+app.add_middleware(LoggingMiddleware)
+
+# Configure CORS - AFTER logging
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
@@ -40,26 +66,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Add request logging middleware - AFTER CORS
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    """Log all incoming requests for debugging."""
-    print(f"🔴 MIDDLEWARE CALLED: {request.method} {request.url.path}")  # Force print to console
-    logger.info(f"📥 {request.method} {request.url.path}")
-    logger.info(f"   Headers: {dict(request.headers)}")
-    logger.info(f"   Query params: {dict(request.query_params)}")
-
-    try:
-        response = await call_next(request)
-        logger.info(f"📤 Response status: {response.status_code}")
-        return response
-    except Exception as e:
-        logger.error(f"❌ Request failed: {str(e)}", exc_info=True)
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"detail": f"Internal server error: {str(e)}"}
-        )
 
 # Include routers
 app.include_router(router, prefix="/api/v1", tags=["Interface Wizard"])

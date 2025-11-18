@@ -29,6 +29,10 @@ requests
 python-dateutil
 pytz
 faker
+openpyxl  # Excel file support (.xlsx)
+xlrd      # Excel file support (.xls)
+PyPDF2    # PDF file support
+pdfplumber  # Enhanced PDF parsing
 
 # Validation
 email-validator
