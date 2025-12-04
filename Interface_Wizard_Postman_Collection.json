@@ -1,0 +1,361 @@
+{
+  "info": {
+    "name": "Interface Wizard API",
+    "description": "Complete API collection for Interface Wizard - Backend testing",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health Check",
+      "item": [
+        {
+          "name": "Basic Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8000/api/v1/health",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8000",
+              "path": ["api", "v1", "health"]
+            },
+            "description": "Check if the backend is running"
+          }
+        },
+        {
+          "name": "Detailed Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8000/api/v1/health/detailed",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8000",
+              "path": ["api", "v1", "health", "detailed"]
+            },
+            "description": "Get detailed health status including dependencies"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Command Processing",
+      "item": [
+        {
+          "name": "Create Single Patient (Text Command)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"command\": \"Create a test patient named John Doe, born on 1985-03-15, male, phone 555-0100\",\n  \"session_id\": \"test-session-001\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8000/api/v1/command",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8000",
+              "path": ["api", "v1", "command"]
+            },
+            "description": "Create a single patient using natural language"
+          }
+        },
+        {
+          "name": "Create Multiple Patients",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"command\": \"Create 5 patients with random data\",\n  \"session_id\": \"test-session-002\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8000/api/v1/command",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8000",
+              "path": ["api", "v1", "command"]
+            },
+            "description": "Create multiple patients with random data"
+          }
+        },
+        {
+          "name": "Create Patient with Diagnosis",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"command\": \"Create a patient named Alice Williams with diabetes diagnosis\",\n  \"session_id\": \"test-session-003\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8000/api/v1/command",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8000",
+              "path": ["api", "v1", "command"]
+            },
+            "description": "Create patient with specific diagnosis"
+          }
+        }
+      ]
+    },
+    {
+      "name": "CSV Upload & Preview (Figma UI Flow)",
+      "item": [
+        {
+          "name": "Preview CSV Upload",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "/path/to/test_patients.csv",
+                  "description": "Upload your CSV file here"
+                },
+                {
+                  "key": "command",
+                  "value": "Upload patients from CSV",
+                  "type": "text"
+                },
+                {
+                  "key": "session_id",
+                  "value": "test-session-004",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "http://localhost:8000/api/v1/preview",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8000",
+              "path": ["api", "v1", "preview"]
+            },
+            "description": "Preview CSV upload - shows first 5 records (Figma UI implementation)"
+          }
+        },
+        {
+          "name": "Confirm CSV Upload",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"preview_id\": \"preview-id-from-previous-request\",\n  \"confirmed\": true\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8000/api/v1/confirm",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8000",
+              "path": ["api", "v1", "confirm"]
+            },
+            "description": "Confirm and execute the previewed operation (requires preview_id from /preview response)"
+          }
+        },
+        {
+          "name": "Upload CSV File (Direct)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "/path/to/test_patients.csv",
+                  "description": "Upload your CSV file here"
+                },
+                {
+                  "key": "command",
+                  "value": "Process uploaded patients",
+                  "type": "text"
+                },
+                {
+                  "key": "session_id",
+                  "value": "test-session-005",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "http://localhost:8000/api/v1/command",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8000",
+              "path": ["api", "v1", "command"]
+            },
+            "description": "Direct CSV upload and processing (bypasses preview/confirm flow)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Session Management",
+      "item": [
+        {
+          "name": "Create Session",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"My Test Session\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8000/api/v1/sessions",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8000",
+              "path": ["api", "v1", "sessions"]
+            },
+            "description": "Create a new chat session"
+          }
+        },
+        {
+          "name": "Get All Sessions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8000/api/v1/sessions",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8000",
+              "path": ["api", "v1", "sessions"]
+            },
+            "description": "Get all chat sessions"
+          }
+        },
+        {
+          "name": "Get Session Messages",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8000/api/v1/sessions/test-session-001/messages",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8000",
+              "path": ["api", "v1", "sessions", "test-session-001", "messages"]
+            },
+            "description": "Get all messages in a session (replace test-session-001 with actual session ID)"
+          }
+        },
+        {
+          "name": "Delete Session",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8000/api/v1/sessions/test-session-001",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8000",
+              "path": ["api", "v1", "sessions", "test-session-001"]
+            },
+            "description": "Delete a session (replace test-session-001 with actual session ID)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "HL7 Message Generation",
+      "item": [
+        {
+          "name": "Generate ADT Message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"command\": \"Generate ADT admission message for patient John Doe\",\n  \"session_id\": \"test-session-006\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8000/api/v1/command",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8000",
+              "path": ["api", "v1", "command"]
+            },
+            "description": "Generate HL7 ADT (Admission/Discharge/Transfer) message"
+          }
+        },
+        {
+          "name": "Generate ORU Message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"command\": \"Send observation result for patient with glucose level 120\",\n  \"session_id\": \"test-session-007\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8000/api/v1/command",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8000",
+              "path": ["api", "v1", "command"]
+            },
+            "description": "Generate HL7 ORU (Observation Result) message"
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "apiVersion",
+      "value": "v1",
+      "type": "string"
+    }
+  ]
+}
