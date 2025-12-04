@@ -22,23 +22,23 @@ class HL7v2Service(IHL7Service):
         self.mllp_end = b'\x1c\x0d'
 
     async def create_patient_message(self, patient: Patient) -> HL7Message:
-        """Create an HL7 ADT^A28 message for adding person information."""
+        """Create an HL7 ADT^A04 message for registering a patient (as per URS v2.0)."""
         try:
-            # Create HL7 message
-            msg = Message("ADT_A05")
+            # Create HL7 message - ADT^A04 is for patient registration
+            msg = Message("ADT_A01")  # Use ADT_A01 structure for A04
             msg.msh.msh_3 = self.application
             msg.msh.msh_4 = self.facility
             msg.msh.msh_5 = "OpenEMR"
             msg.msh.msh_6 = "OpenEMR"
             msg.msh.msh_7 = datetime.now().strftime("%Y%m%d%H%M%S")
-            msg.msh.msh_9 = "ADT^A28^ADT_A05"
+            msg.msh.msh_9 = "ADT^A04^ADT_A01"  # A04 = Register Patient
             msg.msh.msh_10 = patient.mrn or str(datetime.now().timestamp())
             msg.msh.msh_11 = "P"  # Production
             msg.msh.msh_12 = "2.5"
 
             # EVN segment
             msg.add_segment("EVN")
-            msg.evn.evn_1 = "A28"
+            msg.evn.evn_1 = "A04"  # Event type code for registration
             msg.evn.evn_2 = datetime.now().strftime("%Y%m%d%H%M%S")
 
             # PID segment
@@ -82,7 +82,7 @@ class HL7v2Service(IHL7Service):
             message_content = msg.to_er7()
 
             return HL7Message(
-                message_type=MessageType.ADT_A28,
+                message_type=MessageType.ADT_A04,  # Fixed: Using ADT_A04 for patient registration (URS v2.0)
                 message_content=message_content,
             )
 
@@ -278,7 +278,7 @@ class HL7v2Service(IHL7Service):
             return message
 
     async def parse_ack(self, ack_content: str) -> Dict[str, Any]:
-        """Parse ACK message and extract status."""
+        """Parse ACK message and extract status with ERR segment details (URS FR-4, IR-2)."""
         try:
             ack_msg = parse_message(ack_content)
 
@@ -287,11 +287,54 @@ class HL7v2Service(IHL7Service):
             ack_code = str(msa_segment.msa_1.value) if msa_segment.msa_1 else "AR"
             ack_text = str(msa_segment.msa_3.value) if msa_segment.msa_3 else ""
 
-            return {
-                "status": ack_code,  # AA=accepted, AE=error, AR=rejected
+            # Parse ERR segments for detailed error information (URS IR-2)
+            error_details = []
+            error_codes = []
+            error_locations = []
+
+            try:
+                # Check if ERR segment exists
+                if hasattr(ack_msg, 'err'):
+                    err_segment = ack_msg.err
+
+                    # ERR-3: HL7 Error Code (CWE data type)
+                    if hasattr(err_segment, 'err_3') and err_segment.err_3:
+                        error_code = str(err_segment.err_3.value)
+                        error_codes.append(error_code)
+
+                    # ERR-7: Diagnostic Information
+                    if hasattr(err_segment, 'err_7') and err_segment.err_7:
+                        diagnostic_info = str(err_segment.err_7.value)
+                        error_details.append(diagnostic_info)
+
+                    # ERR-8: User Message (human-readable error)
+                    if hasattr(err_segment, 'err_8') and err_segment.err_8:
+                        user_message = str(err_segment.err_8.value)
+                        error_details.append(user_message)
+
+                    # ERR-2: Error Location (which field caused the error)
+                    if hasattr(err_segment, 'err_2') and err_segment.err_2:
+                        location = str(err_segment.err_2.value)
+                        error_locations.append(location)
+
+            except Exception as err_parse_error:
+                logger.warning(f"Could not parse ERR segment: {str(err_parse_error)}")
+
+            result = {
+                "status": ack_code,  # AA=accepted, AE=error, AR=rejected, CA=commit accept, CR=commit reject
                 "message": ack_text,
                 "full_ack": ack_content,
             }
+
+            # Add ERR segment details if present
+            if error_details or error_codes or error_locations:
+                result["error_details"] = {
+                    "codes": error_codes,
+                    "messages": error_details,
+                    "locations": error_locations,
+                }
+
+            return result
 
         except Exception as e:
             logger.error(f"Error parsing ACK: {str(e)}", exc_info=True)

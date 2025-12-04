@@ -110,6 +110,9 @@ mirth_messages/
 *.dump
 !docs/*.sql  # Allow SQL files in docs (for schema examples only)
 
+# URS Documents - DO NOT COMMIT (Confidential)
+urs/
+
 # Documentation - Keep only README.md visible
 *.md
 !README.md

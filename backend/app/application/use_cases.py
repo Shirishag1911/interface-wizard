@@ -432,7 +432,11 @@ class ProcessCommandUseCase:
             )
 
     async def _handle_csv_upload(self, patients: List[Patient], raw_command: str) -> OperationResult:
-        """Handle bulk patient creation from CSV upload."""
+        """
+        Handle bulk patient creation from CSV upload with concurrent processing (URS PR-2).
+
+        Uses asyncio semaphore to limit concurrent connections while maximizing throughput.
+        """
         try:
             total_count = len(patients)
             succeeded = 0
@@ -441,46 +445,85 @@ class ProcessCommandUseCase:
             warnings = []
             patient_details = []  # Store first 5 successful patients for summary
 
-            logger.info(f"Processing {total_count} patients from CSV upload")
+            logger.info(f"Processing {total_count} patients from CSV upload with concurrent batch processing")
 
-            for index, patient in enumerate(patients, start=1):
-                try:
-                    # Generate MRN if not provided
-                    if not patient.mrn:
-                        import uuid
-                        patient.mrn = f"CSV{uuid.uuid4().hex[:8].upper()}"
+            # Concurrent processing with semaphore to limit connections (URS PR-2)
+            # Limit to 10 concurrent connections to avoid overwhelming Mirth
+            MAX_CONCURRENT = 10
+            semaphore = asyncio.Semaphore(MAX_CONCURRENT)
 
-                    # Create HL7 message for patient
-                    hl7_message = await self.hl7_service.create_patient_message(patient)
-                    sent_message = await self.hl7_service.send_message(hl7_message)
-                    await self.message_repo.save_message(sent_message)
+            async def process_single_patient(patient: Patient, index: int):
+                """Process a single patient with semaphore control."""
+                async with semaphore:
+                    try:
+                        # Generate MRN if not provided
+                        if not patient.mrn:
+                            import uuid
+                            patient.mrn = f"CSV{uuid.uuid4().hex[:8].upper()}"
 
-                    # Check ACK status
-                    if sent_message.ack_status == "AA":
-                        succeeded += 1
-                        logger.debug(f"Successfully created patient {index}/{total_count}: {patient.first_name} {patient.last_name}")
+                        # Create HL7 message for patient
+                        hl7_message = await self.hl7_service.create_patient_message(patient)
+                        sent_message = await self.hl7_service.send_message(hl7_message)
+                        await self.message_repo.save_message(sent_message)
 
-                        # Store first 5 successful patients for detailed summary
-                        if len(patient_details) < 5:
-                            patient_details.append({
-                                "name": f"{patient.first_name} {patient.last_name}",
-                                "mrn": patient.mrn,
-                                "dob": str(patient.date_of_birth) if patient.date_of_birth else "N/A",
-                                "gender": patient.gender or "N/A",
-                                "diagnosis": patient.metadata.get("primary_diagnosis") or patient.metadata.get("scenario") or "General Care",
-                                "allergies": ", ".join(patient.allergies) if patient.allergies else "None"
-                            })
-                    else:
-                        failed += 1
-                        error_msg = f"Row {patient.metadata.get('csv_row', index)}: {patient.first_name} {patient.last_name} - {sent_message.ack_message}"
-                        errors.append(error_msg)
-                        logger.warning(error_msg)
+                        # Check ACK status
+                        if sent_message.ack_status == "AA":
+                            logger.debug(f"Successfully created patient {index}/{total_count}: {patient.first_name} {patient.last_name}")
 
-                except Exception as e:
+                            return {
+                                "success": True,
+                                "patient": patient,
+                                "index": index,
+                            }
+                        else:
+                            error_msg = f"Row {patient.metadata.get('csv_row', index)}: {patient.first_name} {patient.last_name} - {sent_message.ack_message}"
+                            logger.warning(error_msg)
+                            return {
+                                "success": False,
+                                "error": error_msg,
+                                "index": index,
+                            }
+
+                    except Exception as e:
+                        error_msg = f"Row {patient.metadata.get('csv_row', index)}: {str(e)}"
+                        logger.error(f"Error creating patient {index}/{total_count}: {str(e)}")
+                        return {
+                            "success": False,
+                            "error": error_msg,
+                            "index": index,
+                        }
+
+            # Process all patients concurrently
+            tasks = [
+                process_single_patient(patient, index + 1)
+                for index, patient in enumerate(patients)
+            ]
+
+            # Wait for all tasks to complete
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Aggregate results
+            for result in results:
+                if isinstance(result, Exception):
                     failed += 1
-                    error_msg = f"Row {patient.metadata.get('csv_row', index)}: {str(e)}"
-                    errors.append(error_msg)
-                    logger.error(f"Error creating patient {index}/{total_count}: {str(e)}")
+                    errors.append(f"Unexpected error: {str(result)}")
+                elif result.get("success"):
+                    succeeded += 1
+                    patient = result["patient"]
+
+                    # Store first 5 successful patients for detailed summary
+                    if len(patient_details) < 5:
+                        patient_details.append({
+                            "name": f"{patient.first_name} {patient.last_name}",
+                            "mrn": patient.mrn,
+                            "dob": str(patient.date_of_birth) if patient.date_of_birth else "N/A",
+                            "gender": patient.gender or "N/A",
+                            "diagnosis": patient.metadata.get("primary_diagnosis") or patient.metadata.get("scenario") or "General Care",
+                            "allergies": ", ".join(patient.allergies) if patient.allergies else "None"
+                        })
+                else:
+                    failed += 1
+                    errors.append(result.get("error", "Unknown error"))
 
             # Determine overall status and create detailed message
             if failed == 0:

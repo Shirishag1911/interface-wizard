@@ -13,9 +13,11 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatListModule } from '@angular/material/list';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { TextFieldModule } from '@angular/cdk/text-field';
-import { ChatService, Message, ChatSession } from './chat.service';
+import { MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { ChatService, Message, ChatSession, ConfirmationPreviewResponse } from './chat.service';
 import { MessageComponent } from './message.component';
 import { ThemeService } from '../shared/theme.service';
+import { ConfirmationDialogComponent, ConfirmationDialogData } from './confirmation-dialog.component';
 
 @Component({
   selector: 'app-chat',
@@ -34,7 +36,9 @@ import { ThemeService } from '../shared/theme.service';
     MatListModule,
     MatSlideToggleModule,
     TextFieldModule,
-    MessageComponent
+    MatDialogModule,
+    MessageComponent,
+    ConfirmationDialogComponent
   ],
   templateUrl: './chat.component.html',
   styleUrl: './chat.component.scss'
@@ -43,6 +47,7 @@ export class ChatComponent implements OnInit, OnDestroy {
   private chatService = inject(ChatService);
   private themeService = inject(ThemeService);
   private fb = inject(FormBuilder);
+  private dialog = inject(MatDialog);
 
   @ViewChild('messagesContainer') messagesContainer!: ElementRef;
   @ViewChild('fileInput') fileInput!: ElementRef;
@@ -120,27 +125,99 @@ export class ChatComponent implements OnInit, OnDestroy {
       // Allow submission if either content exists OR a file is selected
       if (!content && !this.selectedFile) return;
 
-      const request = {
-        content: content || 'Process uploaded file',
-        session_id: this.currentSession?.id,
-        file: this.selectedFile || undefined
-      };
-
-      // Clear the form immediately for better UX
-      this.messageForm.reset();
-      this.selectedFile = null;
-
-      this.chatService.sendMessage(request).subscribe({
-        next: () => {
-          // Form already cleared above
-        },
-        error: (error) => {
-          console.error('Error sending message:', error);
-          // Optionally restore the message on error
-          // this.messageForm.patchValue({ content });
-        }
-      });
+      // Check if file is CSV/Excel/PDF for confirmation dialog (URS FR-3)
+      if (this.selectedFile && this.isFileTypeRequiringConfirmation(this.selectedFile)) {
+        this.showConfirmationDialog(content);
+      } else {
+        // Direct submission for non-bulk operations
+        this.submitMessage(content);
+      }
     }
+  }
+
+  /**
+   * Check if file type requires confirmation dialog (URS FR-3)
+   */
+  private isFileTypeRequiringConfirmation(file: File): boolean {
+    const ext = file.name.toLowerCase().split('.').pop();
+    return ext === 'csv' || ext === 'xlsx' || ext === 'xls' || ext === 'pdf';
+  }
+
+  /**
+   * Show confirmation dialog for bulk operations (URS FR-3)
+   */
+  private showConfirmationDialog(content: string): void {
+    if (!this.selectedFile) return;
+
+    this.isLoading = true;
+
+    // Call preview endpoint
+    this.chatService.previewOperation(
+      this.selectedFile,
+      content,
+      this.currentSession?.id
+    ).subscribe({
+      next: (previewData: ConfirmationPreviewResponse) => {
+        this.isLoading = false;
+
+        // Open confirmation dialog
+        const dialogRef = this.dialog.open(ConfirmationDialogComponent, {
+          width: '600px',
+          maxWidth: '90vw',
+          data: previewData as ConfirmationDialogData,
+          disableClose: false
+        });
+
+        dialogRef.afterClosed().subscribe(result => {
+          if (result && result.confirmed) {
+            // User confirmed - proceed with direct upload
+            // Note: Since /confirm endpoint requires cache (not implemented),
+            // we'll use the direct /command endpoint with the original file
+            this.submitMessage(content);
+          } else {
+            // User cancelled - restore the form
+            this.selectedFile = null;
+            console.log('Operation cancelled by user');
+          }
+        });
+      },
+      error: (error) => {
+        this.isLoading = false;
+        console.error('Error previewing operation:', error);
+        // Fall back to direct submission on preview error
+        this.submitMessage(content);
+      }
+    });
+  }
+
+  /**
+   * Submit message with or without file
+   */
+  private submitMessage(content: string): void {
+    const request = {
+      content: content || 'Process uploaded file',
+      session_id: this.currentSession?.id,
+      file: this.selectedFile || undefined
+    };
+
+    // Clear the form immediately for better UX
+    this.messageForm.reset();
+    const fileToSend = this.selectedFile;
+    this.selectedFile = null;
+
+    // Restore the file reference for the actual send
+    request.file = fileToSend || undefined;
+
+    this.chatService.sendMessage(request).subscribe({
+      next: () => {
+        // Form already cleared above
+      },
+      error: (error) => {
+        console.error('Error sending message:', error);
+        // Optionally restore the message on error
+        // this.messageForm.patchValue({ content });
+      }
+    });
   }
 
   onEnterKey(event: KeyboardEvent): void {

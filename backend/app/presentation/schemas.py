@@ -72,3 +72,48 @@ class CSVUploadResponse(BaseModel):
     has_required_fields: Optional[bool] = None
     warnings: List[str] = []
     error: Optional[str] = None
+
+
+class PatientPreview(BaseModel):
+    """Preview of a patient record for confirmation dialog (URS FR-3)."""
+    name: str
+    mrn: Optional[str] = None
+    date_of_birth: Optional[str] = None
+    gender: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    address: Optional[str] = None
+
+
+class ConfirmationPreviewResponse(BaseModel):
+    """Response with preview data for user confirmation (URS FR-3)."""
+    preview_id: str = Field(..., description="Unique ID for this preview session")
+    operation_type: str = Field(..., description="Type of operation (e.g., 'create_patients')")
+    total_records: int = Field(..., description="Total number of records to process")
+    preview_records: List[PatientPreview] = Field(..., description="Sample of records (first 5)")
+    validation_warnings: List[str] = Field(default=[], description="Validation warnings")
+    estimated_time_seconds: Optional[int] = Field(None, description="Estimated processing time")
+    message: str = Field(..., description="Human-readable description")
+
+
+class ConfirmationRequest(BaseModel):
+    """Request to confirm and execute operation (URS FR-3)."""
+    preview_id: str = Field(..., description="Preview ID from preview response")
+    confirmed: bool = Field(..., description="Whether user confirmed the operation")
+
+
+class HealthCheckDetailResponse(BaseModel):
+    """Detailed health check response for a service (URS IR-1)."""
+    service: str
+    status: str
+    message: str
+    response_time_ms: Optional[float] = None
+    details: Optional[Dict[str, Any]] = None
+    timestamp: datetime
+
+
+class SystemHealthResponse(BaseModel):
+    """Overall system health response (URS IR-1)."""
+    overall_status: str = Field(..., description="Overall system status: healthy, degraded, unhealthy")
+    services: Dict[str, HealthCheckDetailResponse]
+    timestamp: datetime

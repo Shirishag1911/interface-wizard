@@ -184,3 +184,22 @@ class IContextRepository(ABC):
     async def update_context(self, context: ConversationContext) -> None:
         """Update existing conversation context."""
         pass
+
+
+class IValidationService(ABC):
+    """Interface for data validation service."""
+
+    @abstractmethod
+    async def validate_patient_data(self, patient: Patient) -> Any:
+        """Validate patient data before processing."""
+        pass
+
+    @abstractmethod
+    async def validate_hl7_message(self, hl7_message_content: str) -> Any:
+        """Validate HL7 message structure and content."""
+        pass
+
+    @abstractmethod
+    async def check_for_duplicates(self, patient: Patient, existing_mrns: Optional[List[str]] = None) -> Any:
+        """Check for duplicate patient records."""
+        pass

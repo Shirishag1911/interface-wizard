@@ -143,6 +143,48 @@ class ApiService {
   async deleteSession(sessionId: string): Promise<void> {
     await this.client.delete(`/sessions/${sessionId}`);
   }
+
+  /**
+   * Preview operation before execution (URS FR-3)
+   * Used for bulk CSV/Excel/PDF uploads to show confirmation dialog
+   */
+  async previewOperation(file: File, command?: string, sessionId?: string): Promise<any> {
+    const formData = new FormData();
+    formData.append('file', file, file.name);
+    if (command) {
+      formData.append('command', command);
+    }
+    if (sessionId) {
+      formData.append('session_id', sessionId);
+    }
+
+    const response = await this.client.post('/preview', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  }
+
+  /**
+   * Confirm and execute previewed operation (URS FR-3)
+   * Note: Current implementation requires re-upload due to missing cache
+   */
+  async confirmOperation(previewId: string, confirmed: boolean): Promise<OperationResponse> {
+    const response = await this.client.post<OperationResponse>('/confirm', {
+      preview_id: previewId,
+      confirmed
+    });
+    return response.data;
+  }
+
+  /**
+   * Get detailed health status (URS IR-1)
+   */
+  async getDetailedHealth(): Promise<any> {
+    const response = await this.client.get('/health/detailed');
+    return response.data;
+  }
 }
 
 export const apiService = new ApiService();

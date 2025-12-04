@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import Sidebar from '../components/Sidebar';
 import MessageBubble from '../components/MessageBubble';
 import ChatInputComponent from '../components/ChatInputComponent';
-import ConfirmationDialog, { ConfirmationDialogData } from '../components/ConfirmationDialog';
 import { apiService } from '../services/api';
 import './Chat.css';
 
@@ -26,9 +25,6 @@ const Chat: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [confirmationDialogOpen, setConfirmationDialogOpen] = useState(false);
-  const [confirmationData, setConfirmationData] = useState<ConfirmationDialogData | null>(null);
-  const [pendingFileUpload, setPendingFileUpload] = useState<{content: string, file: File} | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -128,40 +124,9 @@ Just type your request below and I'll help you!`,
     }
   };
 
-  /**
-   * Check if file type requires confirmation dialog (URS FR-3)
-   */
-  const isFileTypeRequiringConfirmation = (file: File): boolean => {
-    const ext = file.name.toLowerCase().split('.').pop();
-    return ext === 'csv' || ext === 'xlsx' || ext === 'xls' || ext === 'pdf';
-  };
+  const sendMessage = async (content: string, file?: File) => {
+    if (!content.trim() && !file) return;
 
-  /**
-   * Handle confirmation dialog response
-   */
-  const handleConfirmation = async (previewId: string) => {
-    setConfirmationDialogOpen(false);
-
-    if (pendingFileUpload) {
-      // User confirmed - proceed with upload
-      await submitMessage(pendingFileUpload.content, pendingFileUpload.file);
-      setPendingFileUpload(null);
-    }
-  };
-
-  /**
-   * Handle confirmation dialog cancel
-   */
-  const handleCancelConfirmation = () => {
-    setConfirmationDialogOpen(false);
-    setPendingFileUpload(null);
-    setConfirmationData(null);
-  };
-
-  /**
-   * Submit message directly (after confirmation or for non-bulk operations)
-   */
-  const submitMessage = async (content: string, file?: File) => {
     // Add user message to UI immediately
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -199,41 +164,6 @@ Just type your request below and I'll help you!`,
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  /**
-   * Main message handler with confirmation dialog support (URS FR-3)
-   */
-  const sendMessage = async (content: string, file?: File) => {
-    if (!content.trim() && !file) return;
-
-    // Check if file requires confirmation dialog
-    if (file && isFileTypeRequiringConfirmation(file)) {
-      setIsLoading(true);
-
-      try {
-        // Call preview endpoint
-        const previewData = await apiService.previewOperation(
-          file,
-          content,
-          currentSession?.id
-        );
-
-        // Show confirmation dialog
-        setConfirmationData(previewData);
-        setPendingFileUpload({ content, file });
-        setConfirmationDialogOpen(true);
-        setIsLoading(false);
-      } catch (error: any) {
-        console.error('Failed to preview operation:', error);
-        setIsLoading(false);
-        // Fall back to direct submission on preview error
-        await submitMessage(content, file);
-      }
-    } else {
-      // Direct submission for non-bulk operations
-      await submitMessage(content, file);
     }
   };
 
@@ -350,14 +280,6 @@ Just type your request below and I'll help you!`,
           isLoading={isLoading}
         />
       </div>
-
-      {/* Confirmation Dialog (URS FR-3) */}
-      <ConfirmationDialog
-        open={confirmationDialogOpen}
-        data={confirmationData}
-        onConfirm={handleConfirmation}
-        onCancel={handleCancelConfirmation}
-      />
     </div>
   );
 };

@@ -31,6 +31,31 @@ export interface SendMessageResponse {
   session_id: string;
 }
 
+export interface PatientPreview {
+  name: string;
+  mrn?: string;
+  date_of_birth?: string;
+  gender?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+}
+
+export interface ConfirmationPreviewResponse {
+  preview_id: string;
+  operation_type: string;
+  total_records: number;
+  preview_records: PatientPreview[];
+  validation_warnings: string[];
+  estimated_time_seconds?: number;
+  message: string;
+}
+
+export interface ConfirmationRequest {
+  preview_id: string;
+  confirmed: boolean;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -176,5 +201,37 @@ export class ChatService {
 
   getCurrentSession(): ChatSession | null {
     return this.currentSessionSubject.value;
+  }
+
+  /**
+   * Preview operation before execution (URS FR-3)
+   * Used for bulk CSV/Excel uploads to show confirmation dialog
+   */
+  previewOperation(file: File, command?: string, sessionId?: string): Observable<ConfirmationPreviewResponse> {
+    const formData = new FormData();
+    formData.append('file', file, file.name);
+    if (command) {
+      formData.append('command', command);
+    }
+    if (sessionId) {
+      formData.append('session_id', sessionId);
+    }
+
+    return this.http.post<ConfirmationPreviewResponse>(`${environment.apiUrl}/preview`, formData);
+  }
+
+  /**
+   * Confirm and execute previewed operation (URS FR-3)
+   * Note: Current implementation requires re-upload due to missing cache
+   */
+  confirmOperation(request: ConfirmationRequest): Observable<any> {
+    return this.http.post<any>(`${environment.apiUrl}/confirm`, request);
+  }
+
+  /**
+   * Get detailed health status (URS IR-1)
+   */
+  getHealthStatus(): Observable<any> {
+    return this.http.get<any>(`${environment.apiUrl}/health/detailed`);
   }
 }

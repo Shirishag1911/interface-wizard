@@ -11,6 +11,7 @@ from app.presentation.dependencies import (
     get_context_repository,
     get_operation_repository,
     get_csv_service,
+    get_health_service,
 )
 from app.presentation.schemas import (
     CommandRequest,
@@ -19,6 +20,11 @@ from app.presentation.schemas import (
     SessionResponse,
     ErrorResponse,
     CSVUploadResponse,
+    ConfirmationPreviewResponse,
+    ConfirmationRequest,
+    SystemHealthResponse,
+    HealthCheckDetailResponse,
+    PatientPreview,
 )
 
 router = APIRouter()
@@ -210,4 +216,181 @@ async def get_operation(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
+        )
+
+
+@router.post("/preview", response_model=ConfirmationPreviewResponse)
+async def preview_operation(
+    command: Optional[str] = Form(None),
+    session_id: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+    csv_service = Depends(get_csv_service),
+):
+    """
+    Preview operation before execution (URS FR-3 - Confirmation Dialog).
+
+    This endpoint allows users to preview what will happen before confirming.
+    Returns a preview with sample records and validation warnings.
+    """
+    try:
+        import uuid
+
+        # Generate preview ID
+        preview_id = str(uuid.uuid4())
+
+        # Handle file upload
+        csv_patients = None
+        if file and file.filename:
+            file_ext = file.filename.lower().split('.')[-1]
+            logger.info(f"Previewing {file_ext.upper()} file: {file.filename}")
+
+            try:
+                file_content = await file.read()
+
+                if file_ext == 'csv':
+                    csv_patients = csv_service.parse_csv(file_content)
+                elif file_ext in ['xlsx', 'xls']:
+                    csv_patients = csv_service.parse_excel(file_content, file_ext)
+                elif file_ext == 'pdf':
+                    csv_patients = csv_service.parse_pdf(file_content)
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Unsupported file type: .{file_ext}",
+                    )
+
+            except ValueError as ve:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid {file_ext.upper()} file: {str(ve)}",
+                )
+
+        if not csv_patients:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No file provided or file is empty",
+            )
+
+        # Create preview records (first 5)
+        preview_records = []
+        for patient in csv_patients[:5]:
+            preview_records.append(PatientPreview(
+                name=f"{patient.first_name or ''} {patient.last_name or ''}".strip(),
+                mrn=patient.mrn,
+                date_of_birth=str(patient.date_of_birth) if patient.date_of_birth else None,
+                gender=patient.gender,
+                phone=patient.phone,
+                email=patient.email,
+                address=patient.address,
+            ))
+
+        # Calculate estimated time (rough estimate: 0.5 seconds per patient)
+        estimated_time = int(len(csv_patients) * 0.5)
+
+        # Store preview data in session (in production, use cache like Redis)
+        # For now, we'll just return the preview and trust the frontend to send it back
+        # TODO: In production, store preview_id -> csv_patients mapping in Redis
+
+        return ConfirmationPreviewResponse(
+            preview_id=preview_id,
+            operation_type="create_patients",
+            total_records=len(csv_patients),
+            preview_records=preview_records,
+            validation_warnings=[],
+            estimated_time_seconds=estimated_time,
+            message=f"Ready to create {len(csv_patients)} patient records. Please review and confirm.",
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error previewing operation: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to preview operation: {str(e)}",
+        )
+
+
+@router.post("/confirm", response_model=OperationResponse)
+async def confirm_operation(
+    confirmation: ConfirmationRequest,
+    use_case: ProcessCommandUseCase = Depends(get_process_command_use_case),
+):
+    """
+    Confirm and execute previewed operation (URS FR-3).
+
+    Note: In production, this should retrieve the cached preview data
+    using the preview_id from Redis or similar cache.
+    """
+    try:
+        if not confirmation.confirmed:
+            return OperationResponse(
+                operation_id=confirmation.preview_id,
+                status="CANCELLED",
+                message="Operation cancelled by user",
+                data={"preview_id": confirmation.preview_id},
+                created_at=datetime.utcnow(),
+                completed_at=datetime.utcnow(),
+            )
+
+        # TODO: In production, retrieve cached CSV data using preview_id
+        # For now, return an error indicating the preview data is not cached
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Confirmation workflow requires session/cache storage. Please use /command endpoint directly for now.",
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error confirming operation: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@router.get("/health/detailed", response_model=SystemHealthResponse)
+async def detailed_health_check(
+    health_service = Depends(get_health_service),
+):
+    """
+    Detailed health check endpoint (URS IR-1 - Real-time Status Indicators).
+
+    Checks connectivity to:
+    - Mirth Connect (MLLP endpoint)
+    - OpenEMR (FHIR API)
+
+    Returns detailed status for each service.
+    """
+    try:
+        # Check all systems
+        results = await health_service.check_all_systems()
+
+        # Get overall status
+        overall_status = health_service.get_overall_status(results)
+
+        # Convert to response models
+        services_response = {}
+        for service_name, result in results.items():
+            services_response[service_name] = HealthCheckDetailResponse(
+                service=result.service,
+                status=result.status,
+                message=result.message,
+                response_time_ms=result.response_time_ms,
+                details=result.details,
+                timestamp=result.timestamp,
+            )
+
+        return SystemHealthResponse(
+            overall_status=overall_status,
+            services=services_response,
+            timestamp=datetime.utcnow(),
+        )
+
+    except Exception as e:
+        logger.error(f"Error in detailed health check: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Health check failed: {str(e)}",
         )

@@ -12,6 +12,7 @@ from app.infrastructure.repositories import (
     InMemoryOperationRepository,
     InMemoryContextRepository,
 )
+from app.infrastructure.health_service import HealthCheckService
 
 
 # Singleton instances
@@ -23,6 +24,7 @@ _csv_service = None
 _message_repo = None
 _operation_repo = None
 _context_repo = None
+_health_service = None
 
 
 def get_nlp_service() -> OpenAINLPService:
@@ -87,6 +89,14 @@ def get_context_repository() -> InMemoryContextRepository:
     if _context_repo is None:
         _context_repo = InMemoryContextRepository()
     return _context_repo
+
+
+def get_health_service() -> HealthCheckService:
+    """Get health check service instance."""
+    global _health_service
+    if _health_service is None:
+        _health_service = HealthCheckService()
+    return _health_service
 
 
 def get_process_command_use_case() -> ProcessCommandUseCase:
