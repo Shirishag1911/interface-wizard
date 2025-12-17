@@ -427,12 +427,12 @@ Create an {trigger_event} message for patient {first_name} {last_name}, ID {pati
                 "patient_id": patient_id,
                 "patient_name": f"{first_name} {last_name}".strip(),
                 "hl7_message": hl7_message,
-                "validation": validation.dict(),
+                "validation": validation.model_dump(),
                 "status": "success" if validation.is_valid else "validation_failed"
             })
 
             # Add delay to prevent overwhelming Mirth Connect
-            time.sleep(0.5)  # 500ms delay between messages to prevent crashes
+            time.sleep(1.0)  # 1 second delay between messages to prevent crashes
 
         except Exception as e:
             results.append({
