@@ -424,6 +424,10 @@ Create an {trigger_event} message for patient {first_name} {last_name}, ID {pati
                 "validation": validation.dict(),
                 "status": "success" if validation.is_valid else "validation_failed"
             })
+
+            # Add delay to prevent overwhelming Mirth Connect
+            time.sleep(0.1)  # 100ms delay between messages
+
         except Exception as e:
             results.append({
                 "row_number": index + 2,
