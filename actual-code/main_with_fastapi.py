@@ -20,6 +20,7 @@ import re
 import socket
 import time
 import argparse
+import uuid
 from datetime import datetime
 from tkinter import Tk, filedialog
 from typing import List, Optional, Dict, Any
@@ -210,11 +211,13 @@ class ClientWrapper:
 def fallback_hl7_generator(command_text: str) -> str:
     """Deterministic local HL7 generator for offline testing"""
     now = datetime.now().strftime("%Y%m%d%H%M%S")
+    message_control_id = str(uuid.uuid4())[:20]  # Generate unique message ID
 
     trig_match = re.search(r"Trigger Event[:\s]*(ADT[- ]?A\d{2}|A\d{2})", command_text, re.IGNORECASE)
     trigger = trig_match.group(1).replace(" ", "-").upper() if trig_match else "ADT-A01"
 
-    msh = ["MSH", "^~\\&", "SMART_APP", "SMART_FAC", "REC_APP", "REC_FAC", now, "", f"{trigger.replace('-', '^')}", "", "P", "2.5"]
+    # MSH segment with unique Message Control ID (MSH-10)
+    msh = ["MSH", "^~\\&", "SMART_APP", "SMART_FAC", "REC_APP", "REC_FAC", now, "", f"{trigger.replace('-', '^')}", message_control_id, "P", "2.5"]
 
     id_match = re.search(r"Patient ID[:\s]*([A-Za-z0-9\-_]+)", command_text, re.IGNORECASE)
     pid3 = id_match.group(1).strip() if id_match else ""
