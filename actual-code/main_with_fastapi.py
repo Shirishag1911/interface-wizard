@@ -568,10 +568,17 @@ async def send_hl7_to_mirth(hl7_message: str = Form(...)):
 async def upload_and_process_excel(
     file: UploadFile = File(..., description="Excel or CSV file with patient data"),
     trigger_event: str = Form("ADT-A01", description="HL7 trigger event (e.g., ADT-A01, ADT-A04)"),
-    send_to_mirth_flag: bool = Form(False, description="Automatically send to Mirth after generation")
+    send_to_mirth_flag: bool = Form(True, description="Automatically send to Mirth after generation (default: True)")
 ):
     """
-    Upload Excel/CSV file and generate HL7 messages for all patients
+    Upload Excel/CSV file, generate HL7 messages, and send to Mirth Connect
+
+    **Workflow:**
+    1. Read Excel/CSV file
+    2. Generate HL7 messages for each patient
+    3. Validate critical fields
+    4. **Automatically send to Mirth Connect** (default behavior)
+    5. Mirth processes and inserts into OpenEMR database
 
     **Accepts:**
     - Excel files (.xlsx, .xls)
@@ -587,9 +594,11 @@ async def upload_and_process_excel(
 
     **Returns:**
     - Total patients processed
-    - Number successful
-    - Number failed
+    - Number successful/failed
     - Individual HL7 messages with validation
+    - Mirth send status and acknowledgments
+
+    **Note:** Set send_to_mirth_flag=false to only generate HL7 without sending
     """
     try:
         # Read file
@@ -600,16 +609,33 @@ async def upload_and_process_excel(
         else:
             df = pd.read_excel(BytesIO(contents))
 
-        # Process all patients
+        # Process all patients (generate HL7 messages)
         results = process_excel_batch(df, trigger_event)
 
-        # Send to Mirth if requested
+        # Send to Mirth (default: True)
+        mirth_successful = 0
+        mirth_failed = 0
+
         if send_to_mirth_flag:
-            for result in results:
+            print(f"\n📤 Sending {len(results)} messages to Mirth Connect...")
+            for idx, result in enumerate(results, 1):
                 if result.get("status") == "success":
+                    print(f"  [{idx}/{len(results)}] Sending: {result['patient_name']}...")
                     success, ack = send_to_mirth(result["hl7_message"])
                     result["mirth_sent"] = success
                     result["mirth_ack"] = ack
+
+                    if success:
+                        mirth_successful += 1
+                        print(f"    ✓ Sent successfully")
+                    else:
+                        mirth_failed += 1
+                        print(f"    ❌ Failed: {ack}")
+
+                    # Delay between sends (already in process_excel_batch, but adding here too)
+                    time.sleep(0.2)
+
+            print(f"✓ Mirth sending complete: {mirth_successful} successful, {mirth_failed} failed\n")
 
         successful = sum(1 for r in results if r.get("status") == "success")
         failed = len(results) - successful
