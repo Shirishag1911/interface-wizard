@@ -320,6 +320,7 @@ def validate_required_fields_api(hl7_message_text: str) -> HL7ValidationResponse
 # ==================== MIRTH INTEGRATION ====================
 def send_to_mirth(hl7_message: str, host: str = MIRTH_HOST, port: int = MIRTH_PORT) -> tuple[bool, str]:
     """Send HL7 message to Mirth Connect via TCP/IP (MLLP)"""
+    sock = None
     try:
         START_BLOCK = b"\x0b"
         END_BLOCK = b"\x1c\x0d"
@@ -327,7 +328,7 @@ def send_to_mirth(hl7_message: str, host: str = MIRTH_HOST, port: int = MIRTH_PO
         mllp_message = START_BLOCK + hl7_bytes + END_BLOCK
 
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(10)
+        sock.settimeout(15)  # Increased timeout to 15 seconds
         sock.connect((host, port))
         sock.sendall(mllp_message)
 
@@ -335,12 +336,10 @@ def send_to_mirth(hl7_message: str, host: str = MIRTH_HOST, port: int = MIRTH_PO
         ack_message = ""
         if response:
             ack_message = response.decode("utf-8", errors="ignore").strip("\x0b\x1c\x0d")
-            sock.close()
             if "AA" in ack_message or "CA" in ack_message:
                 return True, ack_message
             else:
                 return False, ack_message
-        sock.close()
         return True, "Message sent successfully (no ACK received)"
     except socket.timeout:
         return False, "Connection timeout! Make sure Mirth is running and the channel is started."
@@ -348,6 +347,13 @@ def send_to_mirth(hl7_message: str, host: str = MIRTH_HOST, port: int = MIRTH_PO
         return False, "Connection refused! Check Mirth is running and channel is listening."
     except Exception as e:
         return False, f"Error sending to Mirth: {str(e)}"
+    finally:
+        # Always close the socket to prevent resource leaks
+        if sock:
+            try:
+                sock.close()
+            except:
+                pass
 
 # ==================== BATCH PROCESSING ====================
 def process_excel_batch(df: pd.DataFrame, trigger_event: str = "ADT-A01") -> List[Dict[str, Any]]:
@@ -426,7 +432,7 @@ Create an {trigger_event} message for patient {first_name} {last_name}, ID {pati
             })
 
             # Add delay to prevent overwhelming Mirth Connect
-            time.sleep(0.1)  # 100ms delay between messages
+            time.sleep(0.5)  # 500ms delay between messages to prevent crashes
 
         except Exception as e:
             results.append({
