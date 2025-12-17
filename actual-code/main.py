@@ -248,7 +248,9 @@ def fallback_hl7_generator(command_text: str) -> str:
     msh_line = "|".join(msh)
     evn_line = f"EVN|{trigger.split('-')[-1]}|{now}"
 
-    pid_fields = ["PID", "1", pid3, "", pid5, "", pid7, pid8, "", "", pid11]
+    # Correct HL7 v2.5 PID segment format
+    # PID|SetID|PatientID(external)|PatientID(internal)|AlternatePatientID|PatientName|MothersMaidenName|DOB|Sex|PatientAlias|Race|PatientAddress
+    pid_fields = ["PID", "1", "", pid3, "", pid5, "", pid7, pid8, "", "", pid11]
     pid_line = "|".join(pid_fields)
 
     pv1_class = "I" if any(x in trigger for x in ("A01", "A02", "A03")) else "O"
