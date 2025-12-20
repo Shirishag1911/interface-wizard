@@ -123,3 +123,10 @@ urs/
 !docs/test_data/README_TEST_DATA.md
 !docs/hl7_test_scenarios/README.md
 !CSV_UPLOAD_GUIDE.md
+
+# Actual-code directory - Ignore documentation and test files
+actual-code/*.md
+actual-code/*.csv
+actual-code/*.pdf
+actual-code/*.py
+!actual-code/main_with_fastapi.py

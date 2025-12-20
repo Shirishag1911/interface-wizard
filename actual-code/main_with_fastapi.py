@@ -21,15 +21,17 @@ import socket
 import time
 import argparse
 import uuid
+import asyncio
 from datetime import datetime
 from tkinter import Tk, filedialog
 from typing import List, Optional, Dict, Any
 from io import BytesIO
+import json
 
 import pandas as pd
 import hl7  # pip install hl7
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 import uvicorn
 
@@ -130,6 +132,18 @@ app = FastAPI(
 
 # Initialize client wrapper globally
 client_wrapper = None
+
+# ==================== IN-MEMORY STORAGE ====================
+# Upload sessions storage (in-memory)
+upload_sessions: Dict[str, Dict[str, Any]] = {}
+
+# Dashboard statistics (in-memory)
+dashboard_stats = {
+    "total_processed": 0,
+    "hl7_messages_generated": 0,
+    "successful_sends": 0,
+    "failed_sends": 0
+}
 
 # ==================== Helper Functions (same as before) ====================
 def _normalize_colname(name: str) -> str:
@@ -450,6 +464,216 @@ Create an {trigger_event} message for patient {first_name} {last_name}, ID {pati
 
     return results
 
+# ==================== ASYNC BACKGROUND PROCESSING ====================
+async def process_csv_with_progress(
+    upload_id: str,
+    df: pd.DataFrame,
+    trigger_event: str = "ADT-A01",
+    send_to_mirth_flag: bool = False
+):
+    """
+    Background async task that processes CSV through 6 steps with real-time updates
+
+    Steps:
+    1. File uploaded (already done)
+    2. Parse CSV data
+    3. Select patients (auto-select all)
+    4. Generate HL7 messages
+    5. Send to Mirth (if enabled)
+    6. Complete
+    """
+    global client_wrapper, dashboard_stats
+
+    session = upload_sessions[upload_id]
+
+    try:
+        # ========== STEP 1: File Uploaded ==========
+        session["current_step"] = 1
+        session["step_status"] = "File uploaded successfully"
+        await asyncio.sleep(0.5)
+
+        # ========== STEP 2: Parse CSV Data ==========
+        session["current_step"] = 2
+        session["step_status"] = "Parsing CSV data..."
+        await asyncio.sleep(0.3)
+
+        # Parse CSV using existing column mapping logic
+        candidate_map = {
+            'patient_last_name': ["Patient Last Name", "Last Name", "Lastname", "last_name", "surname"],
+            'patient_first_name': ["Patient First Name", "First Name", "Firstname", "given_name", "first_name"],
+            'dob': ["DOB", "Date of Birth", "birthdate", "date_of_birth"],
+            'gender': ["Gender", "Sex"],
+            'address1': ["Address 1", "Address1", "Street", "address", "addr1"],
+            'address2': ["Address 2", "Address2", "addr2"],
+            'city': ["City", "Town"],
+            'state': ["State", "Province", "region"],
+            'zipcode': ["Zipcode", "Zip", "Postal Code", "PostalCode"],
+            'patient_id': ["Patient ID", "MRN", "Medical Record Number", "patient_id", "id"]
+        }
+
+        mapping = {}
+        for key, candidates in candidate_map.items():
+            found = _find_column(df, candidates)
+            mapping[key] = found
+
+        parsed_patients = []
+        for index, row in df.iterrows():
+            # Extract patient data
+            last_name = row.get(mapping.get('patient_last_name')) if mapping.get('patient_last_name') else ''
+            first_name = row.get(mapping.get('patient_first_name')) if mapping.get('patient_first_name') else ''
+            dob = row.get(mapping.get('dob')) if mapping.get('dob') else ''
+            gender = row.get(mapping.get('gender')) if mapping.get('gender') else ''
+            address1 = row.get(mapping.get('address1')) if mapping.get('address1') else ''
+            address2 = row.get(mapping.get('address2')) if mapping.get('address2') else ''
+            city = row.get(mapping.get('city')) if mapping.get('city') else ''
+            state = row.get(mapping.get('state')) if mapping.get('state') else ''
+            zipcode = row.get(mapping.get('zipcode')) if mapping.get('zipcode') else ''
+            patient_id = row.get(mapping.get('patient_id')) if mapping.get('patient_id') else f"PAT{str(index + 1).zfill(6)}"
+
+            # Normalize DOB
+            try:
+                if isinstance(dob, str):
+                    dob_formatted = dob.replace("-", "").replace("/", "")
+                elif pd.notna(dob):
+                    dob_formatted = pd.to_datetime(dob).strftime("%Y%m%d")
+                else:
+                    dob_formatted = ""
+            except Exception:
+                dob_formatted = str(dob)
+
+            parts = [address1, address2, city, state, zipcode]
+            full_address = ", ".join([str(p).strip() for p in parts if p and str(p).strip() != "nan"])
+
+            parsed_patients.append({
+                "row_number": index + 2,
+                "patient_id": patient_id,
+                "first_name": first_name,
+                "last_name": last_name,
+                "patient_name": f"{first_name} {last_name}".strip(),
+                "dob": dob_formatted,
+                "gender": gender,
+                "address": full_address,
+                "selected": True
+            })
+
+        session["parsed_patients"] = parsed_patients
+        session["total_patients"] = len(parsed_patients)
+        session["step_status"] = f"Parsed {len(parsed_patients)} patients"
+        await asyncio.sleep(0.5)
+
+        # ========== STEP 3: Select Patients (Auto-select all) ==========
+        session["current_step"] = 3
+        session["step_status"] = f"Selected {len(parsed_patients)} patients"
+        session["selected_patient_ids"] = [p["patient_id"] for p in parsed_patients]
+        await asyncio.sleep(0.5)
+
+        # ========== STEP 4: Generate HL7 Messages ==========
+        session["current_step"] = 4
+        session["generated_messages"] = []
+        generated_count = 0
+
+        for patient in parsed_patients:
+            # Build command
+            command = f"""
+Trigger Event: {trigger_event}
+Patient ID: {patient['patient_id']}
+Patient Name: {patient['last_name']} {patient['first_name']}
+Date of Birth: {patient['dob']}
+Gender: {patient['gender']}
+Address: {patient['address']}
+Create an {trigger_event} message for patient {patient['first_name']} {patient['last_name']}, ID {patient['patient_id']}, DOB {patient['dob']}, Gender {patient['gender']}, Address: {patient['address']}
+"""
+
+            # Generate HL7 message
+            try:
+                hl7_message = generate_hl7_message(client_wrapper, command)
+                validation = validate_required_fields_api(hl7_message)
+
+                message_result = {
+                    "row_number": patient["row_number"],
+                    "patient_id": patient["patient_id"],
+                    "patient_name": patient["patient_name"],
+                    "hl7_message": hl7_message,
+                    "validation": validation.model_dump(),
+                    "status": "success" if validation.is_valid else "validation_failed"
+                }
+
+                session["generated_messages"].append(message_result)
+                generated_count += 1
+                session["step_status"] = f"Generated {generated_count}/{len(parsed_patients)} messages"
+
+                # Update dashboard stats
+                dashboard_stats["hl7_messages_generated"] += 1
+
+                # Rate limiting: wait 1 second between messages to prevent overwhelming Mirth
+                await asyncio.sleep(1.0)
+
+            except Exception as e:
+                error_result = {
+                    "row_number": patient["row_number"],
+                    "patient_id": patient["patient_id"],
+                    "patient_name": patient["patient_name"],
+                    "error": str(e),
+                    "status": "error"
+                }
+                session["generated_messages"].append(error_result)
+                generated_count += 1
+                session["step_status"] = f"Generated {generated_count}/{len(parsed_patients)} messages (with errors)"
+
+        # ========== STEP 5: Send to Mirth (if enabled) ==========
+        if send_to_mirth_flag:
+            session["current_step"] = 5
+            session["step_status"] = "Sending to Mirth Connect..."
+            session["mirth_successful"] = 0
+            session["mirth_failed"] = 0
+            sent_count = 0
+
+            for message in session["generated_messages"]:
+                if message.get("status") == "success":
+                    try:
+                        success, ack = send_to_mirth(message["hl7_message"])
+                        message["mirth_sent"] = success
+                        message["mirth_ack"] = ack
+
+                        if success:
+                            session["mirth_successful"] += 1
+                            dashboard_stats["successful_sends"] += 1
+                        else:
+                            session["mirth_failed"] += 1
+                            dashboard_stats["failed_sends"] += 1
+
+                        sent_count += 1
+                        session["step_status"] = f"Sent {sent_count}/{len(session['generated_messages'])} to Mirth"
+
+                        # Small delay between Mirth sends
+                        await asyncio.sleep(0.2)
+
+                    except Exception as e:
+                        message["mirth_sent"] = False
+                        message["mirth_error"] = str(e)
+                        session["mirth_failed"] += 1
+                        dashboard_stats["failed_sends"] += 1
+        else:
+            session["current_step"] = 5
+            session["step_status"] = "Skipped Mirth sending (disabled)"
+            session["mirth_successful"] = 0
+            session["mirth_failed"] = 0
+            await asyncio.sleep(0.3)
+
+        # ========== STEP 6: Complete ==========
+        session["current_step"] = 6
+        session["status"] = "completed"
+        session["step_status"] = "Processing complete!"
+        session["completed_at"] = datetime.now().isoformat()
+
+        # Update dashboard stats
+        dashboard_stats["total_processed"] += len(parsed_patients)
+
+    except Exception as e:
+        session["status"] = "error"
+        session["error"] = str(e)
+        session["step_status"] = f"Error: {str(e)}"
+
 # ==================== API ENDPOINTS ====================
 
 @app.on_event("startup")
@@ -676,6 +900,283 @@ async def get_supported_trigger_events():
             "ADT-A13": "Cancel Discharge"
         },
         "patient_class_mapping": TRIGGER_EVENT_MAPPING
+    }
+
+# ==================== NEW DASHBOARD & REAL-TIME UPLOAD ENDPOINTS ====================
+
+@app.get("/api/dashboard/stats", tags=["Dashboard"])
+async def get_dashboard_stats():
+    """
+    Get dashboard statistics for Figma UI
+
+    **Returns:**
+    - total_processed: Total patients processed
+    - hl7_messages: Total HL7 messages generated
+    - successful_sends: Successfully sent to Mirth
+    - failed_sends: Failed to send to Mirth
+    - success_rate: Success percentage
+    """
+    total = dashboard_stats["hl7_messages_generated"]
+    success_rate = 0.0
+    if total > 0:
+        success_rate = (dashboard_stats["successful_sends"] / total) * 100
+
+    return {
+        "total_processed": dashboard_stats["total_processed"],
+        "hl7_messages": dashboard_stats["hl7_messages_generated"],
+        "successful_sends": dashboard_stats["successful_sends"],
+        "failed_sends": dashboard_stats["failed_sends"],
+        "success_rate": round(success_rate, 1)
+    }
+
+@app.get("/api/dashboard/system-status", tags=["Dashboard"])
+async def get_system_status():
+    """
+    Get system status for dashboard indicators
+
+    **Returns:**
+    - openemr_connection: Status and last sync time
+    - hl7_parser: Parser status (Running/Limited)
+    - message_queue: Queue status and pending count
+    """
+    # Test Mirth connection
+    mirth_status = "Offline"
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(2)
+        result = sock.connect_ex((MIRTH_HOST, MIRTH_PORT))
+        sock.close()
+        if result == 0:
+            mirth_status = "Active"
+    except Exception:
+        mirth_status = "Offline"
+
+    return {
+        "openemr_connection": {
+            "status": mirth_status,
+            "last_sync": datetime.now().isoformat()
+        },
+        "hl7_parser": {
+            "status": "Running" if client_wrapper and client_wrapper.has_remote else "Limited"
+        },
+        "message_queue": {
+            "status": "Ready",
+            "pending": 0
+        }
+    }
+
+@app.post("/api/upload", tags=["Real-Time Upload"])
+async def upload_csv_with_realtime_progress(
+    file: UploadFile = File(..., description="CSV or Excel file with patient data"),
+    trigger_event: str = Form("ADT-A01", description="HL7 trigger event"),
+    send_to_mirth: bool = Form(False, description="Send to Mirth after generation")
+):
+    """
+    Upload CSV file and start background processing with real-time updates
+
+    **6-Step Workflow:**
+    1. Upload file → Create session
+    2. Parse CSV → Extract patient data
+    3. Select patients → Auto-select all
+    4. Generate HL7 → Create messages
+    5. Send to Mirth → If enabled
+    6. Complete → Show results
+
+    **Returns:**
+    - upload_id: Use this to connect to SSE stream at `/api/upload/{upload_id}/stream`
+    - filename: Original filename
+    - status: "processing"
+    - message: Instructions for getting real-time updates
+
+    **Next Steps:**
+    Connect to `/api/upload/{upload_id}/stream` for real-time progress updates via Server-Sent Events
+    """
+    try:
+        # Read file
+        contents = await file.read()
+
+        if file.filename.endswith('.csv'):
+            df = pd.read_csv(BytesIO(contents))
+        else:
+            df = pd.read_excel(BytesIO(contents))
+
+        # Create upload session
+        upload_id = str(uuid.uuid4())
+        upload_sessions[upload_id] = {
+            "id": upload_id,
+            "filename": file.filename,
+            "status": "processing",
+            "current_step": 0,
+            "step_status": "Initializing...",
+            "total_patients": 0,
+            "created_at": datetime.now().isoformat(),
+            "completed_at": None,
+            "trigger_event": trigger_event,
+            "send_to_mirth": send_to_mirth
+        }
+
+        # Start background processing
+        asyncio.create_task(process_csv_with_progress(upload_id, df, trigger_event, send_to_mirth))
+
+        return {
+            "upload_id": upload_id,
+            "filename": file.filename,
+            "status": "processing",
+            "message": f"Upload started. Connect to /api/upload/{upload_id}/stream for real-time updates"
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
+
+@app.get("/api/upload/{upload_id}/stream", tags=["Real-Time Upload"])
+async def stream_upload_progress(upload_id: str):
+    """
+    Stream real-time progress updates using Server-Sent Events (SSE)
+
+    **Frontend Usage (JavaScript):**
+    ```javascript
+    const eventSource = new EventSource('/api/upload/{upload_id}/stream');
+
+    eventSource.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      console.log('Step:', data.current_step);  // 1-6
+      console.log('Status:', data.step_status);  // "Generated 5/10 messages"
+
+      if (data.status === 'completed' || data.status === 'error') {
+        eventSource.close();
+      }
+    };
+    ```
+
+    **Event Data:**
+    - current_step: 1-6 (current wizard step)
+    - step_status: Human-readable status message
+    - total_patients: Total patient count
+    - generated_count: Messages generated so far (step 4)
+    - mirth_successful/mirth_failed: Mirth sending counts (step 5)
+    - status: "processing", "completed", or "error"
+    """
+    if upload_id not in upload_sessions:
+        raise HTTPException(status_code=404, detail="Upload session not found")
+
+    async def event_generator():
+        """Generate SSE events"""
+        session = upload_sessions[upload_id]
+
+        # Send events until processing is complete
+        while session["status"] == "processing":
+            # Build event data
+            event_data = {
+                "current_step": session.get("current_step", 0),
+                "step_status": session.get("step_status", "Processing..."),
+                "total_patients": session.get("total_patients", 0),
+                "status": session["status"]
+            }
+
+            # Add generated count if in step 4
+            if session.get("current_step") == 4 and "generated_messages" in session:
+                event_data["generated_count"] = len(session["generated_messages"])
+
+            # Add mirth counts if in step 5
+            if session.get("current_step") == 5:
+                event_data["mirth_successful"] = session.get("mirth_successful", 0)
+                event_data["mirth_failed"] = session.get("mirth_failed", 0)
+
+            # Send SSE event
+            yield f"data: {json.dumps(event_data)}\n\n"
+
+            # Wait before next update
+            await asyncio.sleep(0.5)
+
+        # Send final completion event
+        final_data = {
+            "current_step": session.get("current_step", 6),
+            "step_status": session.get("step_status", "Complete"),
+            "total_patients": session.get("total_patients", 0),
+            "status": session["status"],
+            "upload_id": upload_id
+        }
+
+        if session["status"] == "completed":
+            final_data["successful"] = sum(1 for m in session.get("generated_messages", []) if m.get("status") == "success")
+            final_data["failed"] = session.get("total_patients", 0) - final_data["successful"]
+
+        if session["status"] == "error":
+            final_data["error"] = session.get("error", "Unknown error")
+
+        yield f"data: {json.dumps(final_data)}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+@app.get("/api/upload/{upload_id}/status", tags=["Real-Time Upload"])
+async def get_upload_status(upload_id: str):
+    """
+    Get current upload status (polling alternative to SSE)
+
+    **Use this if SSE is not supported in your environment**
+
+    **Returns:**
+    - upload_id: Session ID
+    - filename: Original filename
+    - status: "processing", "completed", "error"
+    - current_step: 1-6
+    - step_status: Current status message
+    - total_patients: Total patient count
+    - created_at: Upload timestamp
+    """
+    if upload_id not in upload_sessions:
+        raise HTTPException(status_code=404, detail="Upload session not found")
+
+    session = upload_sessions[upload_id]
+
+    return {
+        "upload_id": session["id"],
+        "filename": session["filename"],
+        "status": session["status"],
+        "current_step": session.get("current_step", 0),
+        "step_status": session.get("step_status", ""),
+        "total_patients": session.get("total_patients", 0),
+        "created_at": session["created_at"],
+        "completed_at": session.get("completed_at")
+    }
+
+@app.get("/api/upload/{upload_id}/results", tags=["Real-Time Upload"])
+async def get_upload_results(upload_id: str):
+    """
+    Get complete results after processing is finished
+
+    **Returns:**
+    - Complete upload session data
+    - All generated HL7 messages
+    - Validation results for each message
+    - Mirth sending results (if enabled)
+
+    **Use this to display final results in Step 6 (Complete screen)**
+    """
+    if upload_id not in upload_sessions:
+        raise HTTPException(status_code=404, detail="Upload session not found")
+
+    session = upload_sessions[upload_id]
+
+    # Calculate summary statistics
+    messages = session.get("generated_messages", [])
+    successful = sum(1 for m in messages if m.get("status") == "success")
+    failed = len(messages) - successful
+
+    return {
+        "upload_id": session["id"],
+        "filename": session["filename"],
+        "status": session["status"],
+        "current_step": session.get("current_step", 0),
+        "total_patients": session.get("total_patients", 0),
+        "successful": successful,
+        "failed": failed,
+        "mirth_successful": session.get("mirth_successful", 0),
+        "mirth_failed": session.get("mirth_failed", 0),
+        "created_at": session["created_at"],
+        "completed_at": session.get("completed_at"),
+        "messages": messages,
+        "error": session.get("error")
     }
 
 # ==================== CONSOLE MODE (Original Functionality) ====================
