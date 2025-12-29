@@ -1668,12 +1668,31 @@ async def upload_csv_file(
         else:
             raise HTTPException(status_code=400, detail="Unsupported file type. Please upload CSV or Excel file.")
 
+        # LOG: Show exact column names from uploaded file
+        logger.info(f"📊 File Uploaded: {file.filename}")
+        logger.info(f"📋 Column Names in File: {list(df.columns)}")
+        logger.info(f"🔍 Total Rows: {len(df)}, Total Columns: {len(df.columns)}")
+
         # Parse CSV with preview (this generates UUIDs)
         parsed_records, validation_errors, column_mapping = parse_csv_with_preview(
             df=df,
             file_name=file.filename,
             trigger_event=trigger_event
         )
+
+        # LOG: Show column mapping results
+        logger.info(f"🗺️  Column Mapping Results:")
+        if column_mapping:
+            for excel_col, std_field in column_mapping.items():
+                logger.info(f"   '{excel_col}' → '{std_field}'")
+        else:
+            logger.warning(f"⚠️  No columns were mapped!")
+
+        # LOG: Show unmapped columns
+        unmapped_cols = [col for col in df.columns if col not in column_mapping]
+        if unmapped_cols:
+            logger.warning(f"⚠️  Unmapped Columns: {unmapped_cols}")
+            logger.warning(f"   These columns will be ignored during processing")
 
         # Generate session ID and upload ID
         session_id = str(uuid.uuid4())
