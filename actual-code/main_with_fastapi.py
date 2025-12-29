@@ -276,11 +276,13 @@ def _find_column(df, candidates):
 COLUMN_MAPPINGS = {
     "firstName": [
         "first name", "first_name", "firstname", "fname",
-        "given name", "given_name", "givenname"
+        "given name", "given_name", "givenname",
+        "patient first name", "pateint first name"  # Support user's Excel format + typo
     ],
     "lastName": [
         "last name", "last_name", "lastname", "lname",
-        "family name", "family_name", "familyname", "surname"
+        "family name", "family_name", "familyname", "surname",
+        "patient last name"  # Support user's Excel format
     ],
     "dateOfBirth": [
         "date of birth", "date_of_birth", "dob", "birth date",
@@ -302,7 +304,7 @@ COLUMN_MAPPINGS = {
     ],
     "address": [
         "address", "street", "street address", "street_address",
-        "address line 1", "address_line_1"
+        "address line 1", "address_line_1", "address 1"  # Support "Address 1"
     ],
     "city": [
         "city", "town"
