@@ -22,9 +22,9 @@ import time
 import argparse
 import uuid
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from tkinter import Tk, filedialog
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from io import BytesIO
 import json
 
@@ -32,6 +32,7 @@ import pandas as pd
 import hl7  # pip install hl7
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
 
@@ -95,6 +96,77 @@ class BatchProcessingResponse(BaseModel):
     failed: int
     messages: List[Dict[str, Any]]
 
+# ==================== NEW MODELS FOR PREVIEW/CONFIRMATION WORKFLOW ====================
+class PatientRecord(BaseModel):
+    """Individual patient record with UUID for preview"""
+    index: int
+    uuid: str  # Generated UUID for tracking
+    firstName: str
+    lastName: str
+    dateOfBirth: str  # YYYY-MM-DD format
+    gender: str  # "Male" | "Female" | "Other"
+    mrn: str
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    zip: Optional[str] = None
+    validation_status: str  # "valid" | "invalid" | "warning"
+    validation_messages: List[str] = []
+
+class ValidationError(BaseModel):
+    """Validation error details"""
+    row: int
+    field: str
+    error: str
+    value: Any
+    severity: str  # "error" | "warning"
+
+class UploadSession(BaseModel):
+    """Upload session data stored in memory"""
+    session_id: str
+    upload_id: str
+    file_name: str
+    file_type: str  # "csv" | "excel"
+    uploaded_at: str
+    expires_at: str
+    total_records: int
+    parsed_records: List[PatientRecord]
+    validation_errors: List[ValidationError]
+    column_mapping: Dict[str, str]
+    status: str  # "pending" | "processing" | "completed" | "failed"
+    trigger_event: str
+
+class UploadPreviewResponse(BaseModel):
+    """Response for upload preview (Phase 1)"""
+    session_id: str
+    upload_id: str
+    file_name: str
+    file_type: str
+    total_records: int
+    parsed_records: int
+    validation_errors: List[ValidationError]
+    preview: List[PatientRecord]  # First 10 records
+    column_mapping: Dict[str, str]
+    required_fields: List[str]
+    optional_fields: List[str]
+    timestamp: str
+
+class ConfirmUploadRequest(BaseModel):
+    """Request for confirming upload (Phase 2)"""
+    session_id: str
+    selected_indices: List[int] = []  # Empty array = all patients
+    send_to_mirth: bool = True
+
+class ConfirmUploadResponse(BaseModel):
+    """Response for confirm upload"""
+    upload_id: str
+    session_id: str
+    status: str
+    total_selected: int
+    stream_url: str
+
 # ==================== FASTAPI APP ====================
 app = FastAPI(
     title="Smart HL7 Message Generator API",
@@ -128,6 +200,23 @@ app = FastAPI(
         "name": "Interface Wizard Team",
         "email": "support@example.com"
     }
+)
+
+# ==================== CORS CONFIGURATION ====================
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",      # React frontend
+        "http://localhost:4200",      # Angular frontend
+        "http://localhost:5173",      # Vite dev server
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:4200",
+        "http://127.0.0.1:5173",
+        "*"                           # Allow all origins for development
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],              # Allow all HTTP methods
+    allow_headers=["*"],              # Allow all headers
 )
 
 # Initialize client wrapper globally
@@ -170,6 +259,245 @@ def _find_column(df, candidates):
             if token and token in ndf:
                 return dfcol
     return None
+
+# ==================== ENHANCED COLUMN MAPPING (FROM IMPLEMENTATION_PLAN) ====================
+COLUMN_MAPPINGS = {
+    "firstName": [
+        "first name", "first_name", "firstname", "fname",
+        "given name", "given_name", "givenname"
+    ],
+    "lastName": [
+        "last name", "last_name", "lastname", "lname",
+        "family name", "family_name", "familyname", "surname"
+    ],
+    "dateOfBirth": [
+        "date of birth", "date_of_birth", "dob", "birth date",
+        "birth_date", "birthdate", "birthday"
+    ],
+    "gender": [
+        "gender", "sex", "m/f"
+    ],
+    "mrn": [
+        "mrn", "medical record number", "medical_record_number",
+        "patient id", "patient_id", "patientid"
+    ],
+    "phone": [
+        "phone", "phone number", "phone_number", "telephone",
+        "tel", "mobile", "cell"
+    ],
+    "email": [
+        "email", "e-mail", "email address", "email_address"
+    ],
+    "address": [
+        "address", "street", "street address", "street_address",
+        "address line 1", "address_line_1"
+    ],
+    "city": [
+        "city", "town"
+    ],
+    "state": [
+        "state", "province", "region"
+    ],
+    "zip": [
+        "zip", "zip code", "zip_code", "zipcode", "postal code",
+        "postal_code", "postalcode"
+    ]
+}
+
+def normalize_column_name(column: str) -> Optional[str]:
+    """Convert any column name variation to standard field name"""
+    if not column:
+        return None
+
+    normalized = column.lower().strip()
+
+    for standard_field, variations in COLUMN_MAPPINGS.items():
+        if normalized in variations:
+            return standard_field
+
+    return None  # Unknown column
+
+def parse_date_flexible(date_value: Any) -> Optional[str]:
+    """
+    Parse date from various formats to YYYY-MM-DD
+
+    Supports:
+    - MM/DD/YYYY
+    - DD-MM-YYYY
+    - YYYY-MM-DD
+    - Month DD, YYYY
+    - Excel serial date
+
+    Returns: YYYY-MM-DD or None
+    """
+    if pd.isna(date_value):
+        return None
+
+    # Handle Excel serial dates
+    if isinstance(date_value, (int, float)):
+        try:
+            dt = datetime(1899, 12, 30) + pd.Timedelta(days=date_value)
+            return dt.strftime("%Y-%m-%d")
+        except:
+            return None
+
+    # Handle string dates
+    if isinstance(date_value, str):
+        try:
+            # Try pandas date parser first
+            dt = pd.to_datetime(date_value)
+            return dt.strftime("%Y-%m-%d")
+        except:
+            return None
+
+    # Handle datetime objects
+    if isinstance(date_value, datetime):
+        return date_value.strftime("%Y-%m-%d")
+
+    return None
+
+def validate_patient_record(patient: Dict[str, Any]) -> tuple[str, List[str]]:
+    """
+    Validate a patient record and return status and messages
+
+    Returns: (validation_status, validation_messages)
+    """
+    messages = []
+    status = "valid"
+
+    # Check required fields
+    required_fields = ["firstName", "lastName", "dateOfBirth", "gender", "mrn"]
+    for field in required_fields:
+        if not patient.get(field):
+            messages.append(f"Missing required field: {field}")
+            status = "invalid"
+
+    # Validate date of birth format
+    dob = patient.get("dateOfBirth")
+    if dob and not re.match(r"^\d{4}-\d{2}-\d{2}$", dob):
+        messages.append(f"Invalid date format for DOB: {dob}")
+        status = "warning" if status == "valid" else status
+
+    # Validate gender
+    gender = patient.get("gender", "").lower()
+    if gender and gender not in ["m", "f", "male", "female", "other", "u", "unknown"]:
+        messages.append(f"Invalid gender value: {gender}")
+        status = "warning" if status == "valid" else status
+
+    return status, messages
+
+def parse_csv_with_preview(df: pd.DataFrame, file_name: str, trigger_event: str = "ADT-A01") -> Tuple[List[PatientRecord], List[ValidationError], Dict[str, str]]:
+    """
+    Parse CSV/Excel file and create PatientRecord objects with UUIDs
+
+    Returns:
+        - parsed_records: List of PatientRecord objects with UUIDs
+        - validation_errors: List of validation errors
+        - column_mapping: Mapping of actual columns to standard fields
+    """
+    parsed_records = []
+    validation_errors = []
+    column_mapping = {}
+
+    # Build column mapping using COLUMN_MAPPINGS
+    for col in df.columns:
+        standard_field = normalize_column_name(col)
+        if standard_field:
+            column_mapping[col] = standard_field
+
+    # Iterate through rows and create PatientRecord objects
+    for index, row in df.iterrows():
+        try:
+            # Extract fields using column mapping
+            def get_field(field_name: str) -> Optional[str]:
+                """Get field value using column mapping"""
+                for col, std_field in column_mapping.items():
+                    if std_field == field_name:
+                        value = row.get(col)
+                        if pd.notna(value):
+                            return str(value).strip()
+                return None
+
+            # Extract patient data
+            first_name = get_field("firstName") or ""
+            last_name = get_field("lastName") or ""
+            dob_raw = get_field("dateOfBirth")
+            gender_raw = get_field("gender") or ""
+            mrn = get_field("mrn") or f"MRN{str(index + 1).zfill(6)}"
+            phone = get_field("phone")
+            email = get_field("email")
+            address = get_field("address")
+            city = get_field("city")
+            state = get_field("state")
+            zip_code = get_field("zip")
+
+            # Parse date of birth
+            dob_formatted = parse_date_flexible(row.get(list(column_mapping.keys())[list(column_mapping.values()).index("dateOfBirth")]) if "dateOfBirth" in column_mapping.values() else None)
+            if not dob_formatted and dob_raw:
+                dob_formatted = dob_raw
+
+            # Normalize gender
+            gender_normalized = gender_raw.upper()[0] if gender_raw else "U"
+            if gender_normalized not in ["M", "F", "O", "U"]:
+                gender_normalized = "U"
+
+            # Map to full gender name
+            gender_map = {"M": "Male", "F": "Female", "O": "Other", "U": "Unknown"}
+            gender = gender_map.get(gender_normalized, "Unknown")
+
+            # Generate UUID for this patient
+            patient_uuid = str(uuid.uuid4())
+
+            # Create patient record
+            patient_dict = {
+                "index": index,
+                "uuid": patient_uuid,
+                "firstName": first_name,
+                "lastName": last_name,
+                "dateOfBirth": dob_formatted or "",
+                "gender": gender,
+                "mrn": mrn,
+                "phone": phone,
+                "email": email,
+                "address": address,
+                "city": city,
+                "state": state,
+                "zip": zip_code,
+                "validation_status": "valid",
+                "validation_messages": []
+            }
+
+            # Validate patient record
+            validation_status, validation_msgs = validate_patient_record(patient_dict)
+            patient_dict["validation_status"] = validation_status
+            patient_dict["validation_messages"] = validation_msgs
+
+            # Add validation errors to list if invalid
+            if validation_status == "invalid":
+                for msg in validation_msgs:
+                    validation_errors.append(ValidationError(
+                        row=index + 2,  # Excel row number (header is row 1)
+                        field=msg.split(":")[0] if ":" in msg else "unknown",
+                        error=msg,
+                        value="",
+                        severity="error"
+                    ))
+
+            # Create PatientRecord
+            patient_record = PatientRecord(**patient_dict)
+            parsed_records.append(patient_record)
+
+        except Exception as e:
+            # Add validation error for this row
+            validation_errors.append(ValidationError(
+                row=index + 2,
+                field="parsing",
+                error=f"Error parsing row: {str(e)}",
+                value="",
+                severity="error"
+            ))
+
+    return parsed_records, validation_errors, column_mapping
 
 # ==================== CLIENT WRAPPER ====================
 class ClientWrapper:
@@ -465,6 +793,174 @@ Create an {trigger_event} message for patient {first_name} {last_name}, ID {pati
     return results
 
 # ==================== ASYNC BACKGROUND PROCESSING ====================
+async def process_confirmed_patients(
+    upload_id: str,
+    selected_records: List[PatientRecord],
+    trigger_event: str = "ADT-A01",
+    send_to_mirth: bool = True
+):
+    """
+    Background async task that processes confirmed patients with UUIDs
+
+    This function processes PatientRecord objects that already have UUIDs assigned.
+
+    Steps:
+    1. Skip parsing (already done in preview phase)
+    2. Skip selection (user already selected)
+    3. Generate HL7 messages with UUID in ZPI segment
+    4. Send to Mirth (if enabled)
+    5. Complete
+    """
+    global client_wrapper, dashboard_stats
+
+    session = upload_sessions[upload_id]
+
+    try:
+        # ========== STEP 1: Start Processing ==========
+        session["current_step"] = 1
+        session["step_status"] = "Confirmed - starting processing"
+        await asyncio.sleep(0.3)
+
+        # ========== STEP 2: Generate HL7 Messages with UUIDs ==========
+        session["current_step"] = 2
+        session["generated_messages"] = []
+        generated_count = 0
+
+        for patient in selected_records:
+            # Build command for HL7 generation
+            command = f"""
+Trigger Event: {trigger_event}
+Patient ID: {patient.mrn}
+Patient UUID: {patient.uuid}
+Patient Name: {patient.lastName} {patient.firstName}
+Date of Birth: {patient.dateOfBirth}
+Gender: {patient.gender}
+Address: {patient.address or ''}
+City: {patient.city or ''}
+State: {patient.state or ''}
+Zip: {patient.zip or ''}
+Phone: {patient.phone or ''}
+Email: {patient.email or ''}
+Create an {trigger_event} message for patient {patient.firstName} {patient.lastName}, ID {patient.mrn}, UUID {patient.uuid}, DOB {patient.dateOfBirth}, Gender {patient.gender}
+"""
+
+            # Generate HL7 message
+            try:
+                hl7_message = generate_hl7_message(client_wrapper, command)
+
+                # Add custom ZPI segment with UUID
+                hl7_message = add_zpi_segment_with_uuid(hl7_message, patient.uuid)
+
+                validation = validate_required_fields_api(hl7_message)
+
+                message_result = {
+                    "row_number": patient.index + 2,
+                    "patient_id": patient.mrn,
+                    "patient_uuid": patient.uuid,
+                    "patient_name": f"{patient.firstName} {patient.lastName}",
+                    "hl7_message": hl7_message,
+                    "validation": validation.model_dump(),
+                    "status": "success" if validation.is_valid else "validation_failed"
+                }
+
+                session["generated_messages"].append(message_result)
+                generated_count += 1
+                session["step_status"] = f"Generated {generated_count}/{len(selected_records)} messages"
+
+                # Update dashboard stats
+                dashboard_stats["hl7_messages_generated"] += 1
+
+                # Rate limiting: wait 1 second between messages
+                await asyncio.sleep(1.0)
+
+            except Exception as e:
+                error_result = {
+                    "row_number": patient.index + 2,
+                    "patient_id": patient.mrn,
+                    "patient_uuid": patient.uuid,
+                    "patient_name": f"{patient.firstName} {patient.lastName}",
+                    "error": str(e),
+                    "status": "error"
+                }
+                session["generated_messages"].append(error_result)
+                generated_count += 1
+                session["step_status"] = f"Generated {generated_count}/{len(selected_records)} messages (with errors)"
+
+        # ========== STEP 3: Send to Mirth (if enabled) ==========
+        if send_to_mirth:
+            session["current_step"] = 3
+            session["step_status"] = "Sending to Mirth Connect..."
+            session["mirth_successful"] = 0
+            session["mirth_failed"] = 0
+            sent_count = 0
+
+            for message in session["generated_messages"]:
+                if message.get("status") == "success":
+                    try:
+                        success, ack = send_to_mirth(message["hl7_message"])
+                        message["mirth_sent"] = success
+                        message["mirth_ack"] = ack
+
+                        if success:
+                            session["mirth_successful"] += 1
+                            dashboard_stats["successful_sends"] += 1
+                        else:
+                            session["mirth_failed"] += 1
+                            dashboard_stats["failed_sends"] += 1
+
+                        sent_count += 1
+                        session["step_status"] = f"Sent {sent_count}/{len(session['generated_messages'])} to Mirth"
+
+                        # Small delay between Mirth sends
+                        await asyncio.sleep(0.2)
+
+                    except Exception as e:
+                        message["mirth_sent"] = False
+                        message["mirth_error"] = str(e)
+                        session["mirth_failed"] += 1
+                        dashboard_stats["failed_sends"] += 1
+        else:
+            session["current_step"] = 3
+            session["step_status"] = "Skipped Mirth sending (disabled)"
+            session["mirth_successful"] = 0
+            session["mirth_failed"] = 0
+            await asyncio.sleep(0.3)
+
+        # ========== STEP 4: Complete ==========
+        session["current_step"] = 4
+        session["status"] = "completed"
+        session["step_status"] = "Processing complete!"
+        session["completed_at"] = datetime.now().isoformat()
+
+        # Update dashboard stats
+        dashboard_stats["total_processed"] += len(selected_records)
+
+    except Exception as e:
+        session["status"] = "error"
+        session["error"] = str(e)
+        session["step_status"] = f"Error: {str(e)}"
+
+def add_zpi_segment_with_uuid(hl7_message: str, patient_uuid: str) -> str:
+    """
+    Add custom ZPI segment with patient UUID to HL7 message
+
+    ZPI segment format:
+    ZPI|<UUID>
+
+    This is added after the PID segment
+    """
+    lines = hl7_message.split("\n")
+    result_lines = []
+
+    for line in lines:
+        result_lines.append(line)
+        # Add ZPI segment after PID segment
+        if line.startswith("PID|"):
+            zpi_segment = f"ZPI|{patient_uuid}"
+            result_lines.append(zpi_segment)
+
+    return "\n".join(result_lines)
+
 async def process_csv_with_progress(
     upload_id: str,
     df: pd.DataFrame,
@@ -674,19 +1170,59 @@ Create an {trigger_event} message for patient {patient['first_name']} {patient['
         session["error"] = str(e)
         session["step_status"] = f"Error: {str(e)}"
 
+# ==================== SESSION CLEANUP SCHEDULER ====================
+async def cleanup_expired_sessions():
+    """
+    Background task to clean up expired upload sessions
+
+    Runs every 5 minutes and removes sessions older than 1 hour
+    """
+    while True:
+        try:
+            await asyncio.sleep(300)  # Run every 5 minutes
+
+            now = datetime.now()
+            expired_sessions = []
+
+            for session_id, session_data in upload_sessions.items():
+                # Check if session has expires_at field (new preview sessions)
+                if isinstance(session_data, dict) and "expires_at" in session_data:
+                    try:
+                        expires_at = datetime.fromisoformat(session_data["expires_at"])
+                        if now > expires_at:
+                            expired_sessions.append(session_id)
+                    except (ValueError, KeyError):
+                        pass
+
+            # Remove expired sessions
+            for session_id in expired_sessions:
+                del upload_sessions[session_id]
+                print(f"🧹 Cleaned up expired session: {session_id}")
+
+            if expired_sessions:
+                print(f"✓ Removed {len(expired_sessions)} expired session(s)")
+
+        except Exception as e:
+            print(f"⚠ Error in session cleanup: {e}")
+
 # ==================== API ENDPOINTS ====================
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize client wrapper on startup"""
+    """Initialize client wrapper and start background tasks"""
     global client_wrapper
     client_wrapper = ClientWrapper()
+
+    # Start session cleanup background task
+    asyncio.create_task(cleanup_expired_sessions())
+
     print("\n" + "=" * 80)
     print("🚀 Smart HL7 Message Generator API Started")
     print("=" * 80)
     print(f"📚 API Documentation: http://localhost:8000/docs")
     print(f"🔗 Mirth Connect: {MIRTH_HOST}:{MIRTH_PORT}")
     print(f"🤖 OpenAI Enabled: {client_wrapper.has_remote}")
+    print(f"🧹 Session Cleanup: Running (every 5 minutes)")
     print("=" * 80 + "\n")
 
 @app.get("/", tags=["General"])
@@ -717,7 +1253,7 @@ async def health_check():
         "mirth_config": f"{MIRTH_HOST}:{MIRTH_PORT}"
     }
 
-@app.post("/api/generate-hl7", response_model=HL7GenerationResponse, tags=["HL7 Generation"])
+# @app.post("/api/generate-hl7", response_model=HL7GenerationResponse, tags=["HL7 Generation"])
 async def generate_hl7_from_command(request: HL7GenerationRequest):
     """
     Generate HL7 message from natural language command
@@ -964,6 +1500,251 @@ async def get_system_status():
             "pending": 0
         }
     }
+
+@app.post("/api/upload-preview", response_model=UploadPreviewResponse, tags=["Preview & Confirmation Workflow"])
+async def upload_and_preview_csv(
+    file: UploadFile = File(..., description="CSV or Excel file with patient data"),
+    trigger_event: str = Form("ADT-A01", description="HL7 trigger event")
+):
+    """
+    **PHASE 1: Upload & Preview (Non-destructive)**
+
+    Upload CSV/Excel file and get preview of parsed patients with UUIDs.
+    This endpoint does NOT process or send to Mirth - it only parses and previews.
+
+    **Workflow:**
+    1. Parse CSV/Excel with flexible column mapping
+    2. Generate UUID for each patient
+    3. Validate required fields
+    4. Store in temporary session cache (expires after 1 hour)
+    5. Return preview data (first 10 records)
+
+    **Returns:**
+    - session_id: Use this for /api/confirm-upload
+    - preview: First 10 patient records with UUIDs
+    - total_records: Total number of patients found
+    - validation_errors: Any parsing/validation errors
+    - column_mapping: How columns were mapped to fields
+
+    **Next Step:**
+    Call `/api/confirm-upload` with session_id to actually process the patients
+    """
+    try:
+        # Read file
+        contents = await file.read()
+
+        if file.filename.endswith('.csv'):
+            df = pd.read_csv(BytesIO(contents))
+            file_type = "csv"
+        elif file.filename.endswith(('.xlsx', '.xls')):
+            df = pd.read_excel(BytesIO(contents))
+            file_type = "excel"
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported file type. Please upload CSV or Excel file.")
+
+        # Parse CSV with preview (this generates UUIDs)
+        parsed_records, validation_errors, column_mapping = parse_csv_with_preview(
+            df=df,
+            file_name=file.filename,
+            trigger_event=trigger_event
+        )
+
+        # Generate session ID and upload ID
+        session_id = str(uuid.uuid4())
+        upload_id = str(uuid.uuid4())
+
+        # Calculate expiration time (1 hour from now)
+        uploaded_at = datetime.now()
+        expires_at = uploaded_at + timedelta(hours=1)
+
+        # Create upload session and store in memory
+        session_data = UploadSession(
+            session_id=session_id,
+            upload_id=upload_id,
+            file_name=file.filename,
+            file_type=file_type,
+            uploaded_at=uploaded_at.isoformat(),
+            expires_at=expires_at.isoformat(),
+            total_records=len(parsed_records),
+            parsed_records=parsed_records,
+            validation_errors=validation_errors,
+            column_mapping=column_mapping,
+            status="pending",
+            trigger_event=trigger_event
+        )
+
+        # Store session in memory (convert Pydantic model to dict for storage)
+        upload_sessions[session_id] = session_data.model_dump()
+
+        # Return preview response (first 10 records)
+        preview_limit = min(10, len(parsed_records))
+        preview_records = parsed_records[:preview_limit]
+
+        return UploadPreviewResponse(
+            session_id=session_id,
+            upload_id=upload_id,
+            file_name=file.filename,
+            file_type=file_type,
+            total_records=len(parsed_records),
+            parsed_records=len(parsed_records),
+            validation_errors=validation_errors,
+            preview=preview_records,
+            column_mapping=column_mapping,
+            required_fields=["firstName", "lastName", "dateOfBirth", "gender", "mrn"],
+            optional_fields=["phone", "email", "address", "city", "state", "zip"],
+            timestamp=uploaded_at.isoformat()
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
+
+@app.post("/api/confirm-upload", response_model=ConfirmUploadResponse, tags=["Preview & Confirmation Workflow"])
+async def confirm_and_process_upload(request: ConfirmUploadRequest):
+    """
+    **PHASE 2: Confirm & Process (Destructive)**
+
+    Confirm the upload and process selected patients.
+    This retrieves the session data, filters to selected patients, and processes them.
+
+    **Workflow:**
+    1. Retrieve session data from cache using session_id
+    2. Filter to only selected patient indices (empty array = all)
+    3. Generate HL7 messages for selected patients
+    4. Send to Mirth via MLLP (if enabled)
+    5. Stream progress via SSE
+    6. Clean up session after completion
+
+    **Request Body:**
+    - session_id: Session ID from /api/upload-preview
+    - selected_indices: Array of patient indices to process (empty = all)
+    - send_to_mirth: Whether to send to Mirth Connect
+
+    **Returns:**
+    - upload_id: Use this to connect to SSE stream
+    - stream_url: URL for real-time progress updates
+    - status: "processing"
+    - total_selected: Number of patients being processed
+
+    **Next Step:**
+    Connect to `/api/upload/{upload_id}/stream` for real-time progress updates
+    """
+    try:
+        # Retrieve session from cache
+        if request.session_id not in upload_sessions:
+            raise HTTPException(status_code=404, detail="Session not found or expired. Please upload the file again.")
+
+        session_data_dict = upload_sessions[request.session_id]
+
+        # Convert dict back to UploadSession model
+        session_data = UploadSession(**session_data_dict)
+
+        # Check if session has expired
+        expires_at = datetime.fromisoformat(session_data.expires_at)
+        if datetime.now() > expires_at:
+            del upload_sessions[request.session_id]
+            raise HTTPException(status_code=410, detail="Session has expired. Please upload the file again.")
+
+        # Get parsed records
+        all_records = session_data.parsed_records
+
+        # Filter to selected indices (empty array = all patients)
+        if request.selected_indices:
+            selected_records = [r for r in all_records if r.index in request.selected_indices]
+        else:
+            selected_records = all_records
+
+        if not selected_records:
+            raise HTTPException(status_code=400, detail="No patients selected for processing.")
+
+        # Create new upload session for processing
+        processing_upload_id = str(uuid.uuid4())
+
+        upload_sessions[processing_upload_id] = {
+            "id": processing_upload_id,
+            "session_id": request.session_id,
+            "filename": session_data.file_name,
+            "status": "processing",
+            "current_step": 0,
+            "step_status": "Starting processing...",
+            "total_patients": len(selected_records),
+            "created_at": datetime.now().isoformat(),
+            "completed_at": None,
+            "trigger_event": session_data.trigger_event,
+            "send_to_mirth": request.send_to_mirth,
+            "selected_records": [r.model_dump() for r in selected_records]  # Convert to dict
+        }
+
+        # Start background processing with selected records
+        asyncio.create_task(process_confirmed_patients(
+            upload_id=processing_upload_id,
+            selected_records=selected_records,
+            trigger_event=session_data.trigger_event,
+            send_to_mirth=request.send_to_mirth
+        ))
+
+        return ConfirmUploadResponse(
+            upload_id=processing_upload_id,
+            session_id=request.session_id,
+            status="processing",
+            total_selected=len(selected_records),
+            stream_url=f"/api/upload/{processing_upload_id}/stream"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error confirming upload: {str(e)}")
+
+@app.get("/api/upload/{session_id}/preview", tags=["Preview & Confirmation Workflow"])
+async def get_preview_paginated(
+    session_id: str,
+    offset: int = 0,
+    limit: int = 50
+):
+    """
+    Get paginated preview of parsed patients
+
+    **Use this for large files where you need to load more records**
+
+    **Returns:**
+    - session_id: Session ID
+    - total_records: Total number of patients
+    - offset: Current offset
+    - limit: Current limit
+    - records: Array of patient records
+    """
+    try:
+        # Retrieve session from cache
+        if session_id not in upload_sessions:
+            raise HTTPException(status_code=404, detail="Session not found or expired.")
+
+        session_data_dict = upload_sessions[session_id]
+        session_data = UploadSession(**session_data_dict)
+
+        # Check if session has expired
+        expires_at = datetime.fromisoformat(session_data.expires_at)
+        if datetime.now() > expires_at:
+            del upload_sessions[session_id]
+            raise HTTPException(status_code=410, detail="Session has expired.")
+
+        # Get paginated records
+        total_records = len(session_data.parsed_records)
+        records = session_data.parsed_records[offset:offset+limit]
+
+        return {
+            "session_id": session_id,
+            "total_records": total_records,
+            "offset": offset,
+            "limit": limit,
+            "records": [r.model_dump() for r in records]
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving preview: {str(e)}")
 
 @app.post("/api/upload", tags=["Real-Time Upload"])
 async def upload_csv_with_realtime_progress(
