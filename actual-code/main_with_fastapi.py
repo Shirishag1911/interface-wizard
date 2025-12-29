@@ -22,6 +22,7 @@ import time
 import argparse
 import uuid
 import asyncio
+import logging
 from datetime import datetime, timedelta
 from tkinter import Tk, filedialog
 from typing import List, Optional, Dict, Any, Tuple
@@ -47,6 +48,18 @@ except Exception:
 OPENAI_API_KEY = "your-openai-api-key-here"  # TODO: Replace with your actual OpenAI API key
 MIRTH_HOST = "localhost"
 MIRTH_PORT = 6661
+
+# ==================== LOGGING CONFIGURATION ====================
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler('interface_wizard.log')
+    ]
+)
+logger = logging.getLogger(__name__)
 
 FIELD_TIERS = {
     "SYSTEM_FIELDS": {"MSH": [11, 12], "EVN": [2]},
@@ -665,34 +678,102 @@ def validate_required_fields_api(hl7_message_text: str) -> HL7ValidationResponse
 
 # ==================== MIRTH INTEGRATION ====================
 def send_to_mirth(hl7_message: str, host: str = MIRTH_HOST, port: int = MIRTH_PORT) -> tuple[bool, str]:
-    """Send HL7 message to Mirth Connect via TCP/IP (MLLP)"""
+    """Send HL7 message to Mirth Connect via TCP/IP (MLLP) with detailed logging"""
     sock = None
+
+    logger.info("="*80)
+    logger.info("🚀 STARTING MIRTH TRANSMISSION")
+    logger.info(f"📍 Target: {host}:{port}")
+    logger.info(f"📏 HL7 Message Length: {len(hl7_message)} characters")
+
+    # Extract patient info from message for logging
+    try:
+        lines = hl7_message.split("\n")
+        msh_line = next((l for l in lines if l.startswith("MSH|")), "")
+        pid_line = next((l for l in lines if l.startswith("PID|")), "")
+        zpi_line = next((l for l in lines if l.startswith("ZPI|")), "")
+
+        logger.info(f"📋 MSH Segment: {msh_line[:100]}...")
+        logger.info(f"👤 PID Segment: {pid_line[:100]}...")
+        if zpi_line:
+            logger.info(f"🆔 ZPI Segment (UUID): {zpi_line}")
+    except Exception as e:
+        logger.warning(f"⚠️  Could not extract message details: {e}")
+
     try:
         START_BLOCK = b"\x0b"
         END_BLOCK = b"\x1c\x0d"
         hl7_bytes = hl7_message.replace("\n", "\r").encode("utf-8")
         mllp_message = START_BLOCK + hl7_bytes + END_BLOCK
 
+        logger.info(f"📦 MLLP Message Size: {len(mllp_message)} bytes")
+        logger.info(f"🔧 MLLP Envelope: START_BLOCK(0x0b) + HL7 + END_BLOCK(0x1c 0x0d)")
+
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(15)  # Increased timeout to 15 seconds
-        sock.connect((host, port))
-        sock.sendall(mllp_message)
+        logger.info(f"⏰ Socket timeout set to 15 seconds")
 
+        logger.info(f"🔌 Attempting to connect to {host}:{port}...")
+        sock.connect((host, port))
+        logger.info(f"✅ CONNECTION ESTABLISHED to {host}:{port}")
+
+        logger.info(f"📤 Sending MLLP message ({len(mllp_message)} bytes)...")
+        sock.sendall(mllp_message)
+        logger.info(f"✅ MESSAGE SENT SUCCESSFULLY")
+
+        logger.info(f"⏳ Waiting for ACK response from Mirth...")
         response = sock.recv(4096)
+        logger.info(f"📨 Received response ({len(response)} bytes)")
+
         ack_message = ""
         if response:
             ack_message = response.decode("utf-8", errors="ignore").strip("\x0b\x1c\x0d")
+            logger.info(f"📬 ACK Message: {ack_message}")
+
             if "AA" in ack_message or "CA" in ack_message:
+                logger.info(f"✅ ACK STATUS: POSITIVE (AA/CA found)")
+                logger.info("="*80)
                 return True, ack_message
             else:
+                logger.warning(f"⚠️  ACK STATUS: NEGATIVE or UNKNOWN")
+                logger.warning(f"ACK Content: {ack_message}")
+                logger.info("="*80)
                 return False, ack_message
-        return True, "Message sent successfully (no ACK received)"
+        else:
+            logger.warning(f"⚠️  No ACK received from Mirth (but message was sent)")
+            logger.info("="*80)
+            return True, "Message sent successfully (no ACK received)"
+
     except socket.timeout:
-        return False, "Connection timeout! Make sure Mirth is running and the channel is started."
+        error_msg = "Connection timeout! Make sure Mirth is running and the channel is started."
+        logger.error(f"❌ TIMEOUT ERROR: {error_msg}")
+        logger.error(f"   - Checked host: {host}")
+        logger.error(f"   - Checked port: {port}")
+        logger.error(f"   - Timeout: 15 seconds")
+        logger.info("="*80)
+        return False, error_msg
+
     except ConnectionRefusedError:
-        return False, "Connection refused! Check Mirth is running and channel is listening."
+        error_msg = "Connection refused! Check Mirth is running and channel is listening."
+        logger.error(f"❌ CONNECTION REFUSED ERROR")
+        logger.error(f"   - Mirth Host: {host}")
+        logger.error(f"   - Mirth Port: {port}")
+        logger.error(f"   - Possible causes:")
+        logger.error(f"     1. Mirth Connect is not running")
+        logger.error(f"     2. Channel is not deployed/started")
+        logger.error(f"     3. Wrong port number (check Mirth channel settings)")
+        logger.error(f"     4. Firewall blocking connection")
+        logger.info("="*80)
+        return False, error_msg
+
     except Exception as e:
-        return False, f"Error sending to Mirth: {str(e)}"
+        error_msg = f"Error sending to Mirth: {str(e)}"
+        logger.error(f"❌ UNEXPECTED ERROR: {error_msg}")
+        logger.error(f"   - Exception type: {type(e).__name__}")
+        logger.error(f"   - Exception details: {str(e)}")
+        logger.info("="*80)
+        return False, error_msg
+
     finally:
         # Always close the socket to prevent resource leaks
         if sock:
@@ -812,12 +893,21 @@ async def process_confirmed_patients(
     """
     global client_wrapper, dashboard_stats
 
+    logger.info("="*80)
+    logger.info(f"🎯 STARTING CONFIRMED PATIENT PROCESSING")
+    logger.info(f"📝 Upload ID: {upload_id}")
+    logger.info(f"👥 Total Patients to Process: {len(selected_records)}")
+    logger.info(f"⚙️  Trigger Event: {trigger_event}")
+    logger.info(f"🔧 Send to Mirth: {send_to_mirth}")
+    logger.info("="*80)
+
     session = upload_sessions[upload_id]
 
     try:
         # ========== STEP 1: Start Processing ==========
         session["current_step"] = 1
         session["step_status"] = "Confirmed - starting processing"
+        logger.info(f"✅ STEP 1: Processing started")
         await asyncio.sleep(0.3)
 
         # ========== STEP 2: Generate HL7 Messages with UUIDs ==========
@@ -825,7 +915,10 @@ async def process_confirmed_patients(
         session["generated_messages"] = []
         generated_count = 0
 
-        for patient in selected_records:
+        logger.info(f"✅ STEP 2: Generating HL7 messages for {len(selected_records)} patients")
+
+        for idx, patient in enumerate(selected_records, 1):
+            logger.info(f"📝 Processing patient {idx}/{len(selected_records)}: {patient.firstName} {patient.lastName} (MRN: {patient.mrn}, UUID: {patient.uuid})")
             # Build command for HL7 generation
             command = f"""
 Trigger Event: {trigger_event}
@@ -893,9 +986,15 @@ Create an {trigger_event} message for patient {patient.firstName} {patient.lastN
             session["mirth_failed"] = 0
             sent_count = 0
 
-            for message in session["generated_messages"]:
+            logger.info(f"✅ STEP 3: Sending {len(session['generated_messages'])} messages to Mirth Connect")
+            logger.info(f"   Target: {MIRTH_HOST}:{MIRTH_PORT}")
+
+            for idx, message in enumerate(session["generated_messages"], 1):
                 if message.get("status") == "success":
                     try:
+                        logger.info(f"📤 Sending message {idx}/{len(session['generated_messages'])} to Mirth...")
+                        logger.info(f"   Patient: {message.get('patient_name')} (MRN: {message.get('patient_id')}, UUID: {message.get('patient_uuid')})")
+
                         success, ack = send_to_mirth(message["hl7_message"])
                         message["mirth_sent"] = success
                         message["mirth_ack"] = ack
@@ -903,9 +1002,13 @@ Create an {trigger_event} message for patient {patient.firstName} {patient.lastN
                         if success:
                             session["mirth_successful"] += 1
                             dashboard_stats["successful_sends"] += 1
+                            logger.info(f"✅ Message {idx} sent successfully to Mirth")
+                            logger.info(f"   ACK received: {ack[:100] if len(ack) > 100 else ack}")
                         else:
                             session["mirth_failed"] += 1
                             dashboard_stats["failed_sends"] += 1
+                            logger.error(f"❌ Message {idx} failed to send to Mirth")
+                            logger.error(f"   ACK/Error: {ack}")
 
                         sent_count += 1
                         session["step_status"] = f"Sent {sent_count}/{len(session['generated_messages'])} to Mirth"
@@ -918,11 +1021,17 @@ Create an {trigger_event} message for patient {patient.firstName} {patient.lastN
                         message["mirth_error"] = str(e)
                         session["mirth_failed"] += 1
                         dashboard_stats["failed_sends"] += 1
+                        logger.error(f"❌ Exception sending message {idx} to Mirth: {str(e)}")
+
+            logger.info(f"📊 MIRTH TRANSMISSION SUMMARY:")
+            logger.info(f"   ✅ Successful: {session['mirth_successful']}")
+            logger.info(f"   ❌ Failed: {session['mirth_failed']}")
         else:
             session["current_step"] = 3
             session["step_status"] = "Skipped Mirth sending (disabled)"
             session["mirth_successful"] = 0
             session["mirth_failed"] = 0
+            logger.info(f"⏭️  STEP 3: Skipped - send_to_mirth is disabled")
             await asyncio.sleep(0.3)
 
         # ========== STEP 4: Complete ==========
@@ -934,10 +1043,28 @@ Create an {trigger_event} message for patient {patient.firstName} {patient.lastN
         # Update dashboard stats
         dashboard_stats["total_processed"] += len(selected_records)
 
+        logger.info("="*80)
+        logger.info(f"✅ PROCESSING COMPLETED SUCCESSFULLY")
+        logger.info(f"📊 FINAL SUMMARY:")
+        logger.info(f"   Total Patients: {len(selected_records)}")
+        logger.info(f"   HL7 Messages Generated: {len(session['generated_messages'])}")
+        if send_to_mirth:
+            logger.info(f"   Mirth Successful: {session['mirth_successful']}")
+            logger.info(f"   Mirth Failed: {session['mirth_failed']}")
+        logger.info(f"   Upload ID: {upload_id}")
+        logger.info(f"   Completed At: {session['completed_at']}")
+        logger.info("="*80)
+
     except Exception as e:
         session["status"] = "error"
         session["error"] = str(e)
         session["step_status"] = f"Error: {str(e)}"
+        logger.error("="*80)
+        logger.error(f"❌ PROCESSING FAILED")
+        logger.error(f"   Upload ID: {upload_id}")
+        logger.error(f"   Error: {str(e)}")
+        logger.error(f"   Exception Type: {type(e).__name__}")
+        logger.error("="*80)
 
 def add_zpi_segment_with_uuid(hl7_message: str, patient_uuid: str) -> str:
     """
