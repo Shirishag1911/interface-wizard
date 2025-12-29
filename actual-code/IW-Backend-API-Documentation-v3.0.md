@@ -895,6 +895,72 @@ MRN002,Jane,Smith,1990-08-20,F,555-5678,jane@example.com
 MRN003,Bob,Johnson,1975-12-10,M,555-9012,bob@example.com
 ```
 
+### Dynamic Column Matching
+
+The backend uses **intelligent fuzzy matching** to automatically detect column names, eliminating the need for exact column name formatting.
+
+#### How It Works
+
+The system employs a multi-strategy approach:
+
+1. **Exact Match** (fastest): Checks against predefined variations
+2. **Fuzzy Keyword Match**: Extracts meaningful keywords and matches them
+3. **Substring Match**: Detects keywords within compound words
+
+#### Noise Word Removal
+
+The following words are automatically ignored during matching:
+- "patient", "person", "record", "data", "info", "information"
+- "field", "column", "value", "the", "a", "an"
+
+#### Examples of Supported Column Names
+
+| Your Column Name | Detected As | How Matched |
+|-----------------|-------------|-------------|
+| `Patient First Name` | `firstName` | Fuzzy (keyword: "first") |
+| `Pateint First Name` | `firstName` | Fuzzy (typo tolerance) |
+| `Patient Last Name` | `lastName` | Fuzzy (keyword: "last") |
+| `Date of Birth` | `dateOfBirth` | Exact match |
+| `DOB` | `dateOfBirth` | Exact match |
+| `Email Address` | `email` | Fuzzy (keyword: "email") |
+| `Phone Number` | `phone` | Fuzzy (keyword: "phone") |
+| `Address 1` | `address` | Fuzzy (keyword: "address") |
+| `Zipcode` | `zip` | Fuzzy (substring: "zip") |
+| `Medical Record Number` | `mrn` | Predefined alias |
+
+#### Supported Field Keywords
+
+| Field | Matching Keywords |
+|-------|------------------|
+| `firstName` | first, given, fname |
+| `lastName` | last, family, surname, lname |
+| `dateOfBirth` | birth, dob, born |
+| `gender` | gender, sex |
+| `email` | email, e-mail, mail |
+| `phone` | phone, tel, mobile, cell |
+| `mrn` | mrn |
+| `address` | address, street, addr |
+| `city` | city, town |
+| `state` | state, province, region |
+| `zip` | zip, postal, postcode |
+
+#### Matching Process Example
+
+For column `"Patient Last Name"`:
+
+1. **Normalize**: Convert to lowercase → `"patient last name"`
+2. **Split**: Extract words → `["patient", "last", "name"]`
+3. **Filter Noise**: Remove "patient" → `["last", "name"]`
+4. **Match Keywords**: Find "last" matches `lastName` field ✅
+
+#### What This Means For You
+
+✅ **No need to rename columns** - use any reasonable format
+✅ **Typo tolerant** - "Pateint" still matches
+✅ **Flexible formatting** - Works with spaces, underscores, hyphens
+✅ **Compound names** - "Email Address", "Phone Number" work fine
+✅ **Prefix variations** - "Patient First Name", "Person First Name", etc.
+
 ---
 
 ## Code Examples

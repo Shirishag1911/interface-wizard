@@ -319,17 +319,82 @@ COLUMN_MAPPINGS = {
 }
 
 def normalize_column_name(column: str) -> Optional[str]:
-    """Convert any column name variation to standard field name"""
+    """
+    Convert any column name variation to standard field name using intelligent fuzzy matching.
+
+    Strategy:
+    1. Exact match against predefined variations (backward compatibility)
+    2. Fuzzy matching using key terms extraction
+    3. Substring matching for compound words
+
+    Args:
+        column: Raw column name from CSV/Excel
+
+    Returns:
+        Standard field name (e.g., "firstName") or None if no match
+    """
     if not column:
         return None
 
     normalized = column.lower().strip()
 
+    # Strategy 1: Exact match (fastest, most reliable)
     for standard_field, variations in COLUMN_MAPPINGS.items():
         if normalized in variations:
             return standard_field
 
-    return None  # Unknown column
+    # Strategy 2: Fuzzy matching with keyword detection
+    # Define noise words to remove
+    noise_words = {"patient", "person", "record", "data", "info", "information",
+                   "field", "column", "value", "the", "a", "an"}
+
+    # Define key terms for each field (ordered by priority - most specific first)
+    field_keywords = {
+        "firstName": ["first", "given", "fname"],
+        "lastName": ["last", "family", "surname", "lname"],
+        "dateOfBirth": ["birth", "dob", "born"],
+        "gender": ["gender", "sex"],
+        "email": ["email", "e-mail", "mail"],  # Check email before address (to avoid "email address" → "address")
+        "phone": ["phone", "tel", "mobile", "cell"],
+        "mrn": ["mrn"],  # Remove "number" to avoid false matches
+        "address": ["address", "street", "addr"],
+        "city": ["city", "town"],
+        "state": ["state", "province", "region"],
+        "zip": ["zip", "postal", "postcode"]
+    }
+
+    # Extract meaningful words from column name
+    # Remove punctuation and split by common delimiters
+    import re
+    words = re.split(r'[_\s\-/]+', normalized)
+    meaningful_words = [w for w in words if w and w not in noise_words]
+
+    # First pass: Try exact keyword matches (most reliable)
+    for standard_field, keywords in field_keywords.items():
+        for keyword in keywords:
+            for word in meaningful_words:
+                if keyword == word:
+                    logger.info(f"🔍 Fuzzy Match (exact): '{column}' → '{standard_field}' (keyword: '{keyword}')")
+                    return standard_field
+
+    # Second pass: Try substring matches (less reliable, more permissive)
+    for standard_field, keywords in field_keywords.items():
+        for keyword in keywords:
+            for word in meaningful_words:
+                # Only match if keyword is substantial part of word (avoid short substring matches)
+                if len(keyword) >= 3 and (keyword in word or word in keyword):
+                    logger.info(f"🔍 Fuzzy Match (substring): '{column}' → '{standard_field}' ('{keyword}' ↔ '{word}')")
+                    return standard_field
+
+    # Strategy 3: Special handling for common patterns
+    # Handle "name" field (could be first or last)
+    if normalized == "name" or normalized == "patient name":
+        logger.warning(f"⚠️  Ambiguous column '{column}' - treating as firstName (consider renaming to 'first name' or 'last name')")
+        return "firstName"
+
+    # No match found
+    logger.warning(f"❌ Could not map column '{column}' to any standard field")
+    return None
 
 def parse_date_flexible(date_value: Any) -> Optional[str]:
     """
