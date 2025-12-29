@@ -138,19 +138,18 @@ class UploadSession(BaseModel):
     status: str  # "pending" | "processing" | "completed" | "failed"
     trigger_event: str
 
-class UploadPreviewResponse(BaseModel):
-    """Response for upload preview (Phase 1)"""
+class UploadResponse(BaseModel):
+    """Response for file upload with preview data"""
     session_id: str
-    upload_id: str
     file_name: str
     file_type: str
     total_records: int
-    parsed_records: int
+    valid_records: int
+    invalid_records: int
+    patients: List[PatientRecord]  # All parsed patient records
     validation_errors: List[ValidationError]
-    preview: List[PatientRecord]  # First 10 records
     column_mapping: Dict[str, str]
-    required_fields: List[str]
-    optional_fields: List[str]
+    expires_at: str
     timestamp: str
 
 class ConfirmUploadRequest(BaseModel):
@@ -160,11 +159,11 @@ class ConfirmUploadRequest(BaseModel):
     send_to_mirth: bool = True
 
 class ConfirmUploadResponse(BaseModel):
-    """Response for confirm upload"""
+    """Response for confirm and process"""
     upload_id: str
-    session_id: str
     status: str
     total_selected: int
+    message: str
     stream_url: str
 
 # ==================== FASTAPI APP ====================
@@ -1501,33 +1500,33 @@ async def get_system_status():
         }
     }
 
-@app.post("/api/upload-preview", response_model=UploadPreviewResponse, tags=["Preview & Confirmation Workflow"])
-async def upload_and_preview_csv(
+@app.post("/api/upload", response_model=UploadResponse, tags=["Upload & Processing"])
+async def upload_csv_file(
     file: UploadFile = File(..., description="CSV or Excel file with patient data"),
-    trigger_event: str = Form("ADT-A01", description="HL7 trigger event")
+    trigger_event: str = Form("ADT-A01", description="HL7 trigger event (default: ADT-A01)")
 ):
     """
-    **PHASE 1: Upload & Preview (Non-destructive)**
+    **Upload CSV/Excel File and Get Preview Data**
 
-    Upload CSV/Excel file and get preview of parsed patients with UUIDs.
-    This endpoint does NOT process or send to Mirth - it only parses and previews.
+    Upload a CSV or Excel file containing patient data. The file will be parsed, validated,
+    and all patient records will be returned for preview. No processing or Mirth transmission
+    occurs at this stage.
 
     **Workflow:**
-    1. Parse CSV/Excel with flexible column mapping
-    2. Generate UUID for each patient
-    3. Validate required fields
-    4. Store in temporary session cache (expires after 1 hour)
-    5. Return preview data (first 10 records)
+    1. Parse CSV/Excel file with flexible column mapping
+    2. Generate unique UUID for each patient record
+    3. Validate all required fields (MRN, First Name, Last Name, DOB, Gender)
+    4. Store session data in memory (expires after 1 hour)
+    5. Return all patient records with validation status
 
     **Returns:**
-    - session_id: Use this for /api/confirm-upload
-    - preview: First 10 patient records with UUIDs
-    - total_records: Total number of patients found
-    - validation_errors: Any parsing/validation errors
-    - column_mapping: How columns were mapped to fields
+    - `session_id`: Use this to confirm and process selected patients
+    - `patients`: Array of all parsed patient records with UUIDs
+    - `validation_errors`: List of any validation errors found
+    - `column_mapping`: Shows how CSV columns were mapped to fields
 
     **Next Step:**
-    Call `/api/confirm-upload` with session_id to actually process the patients
+    Call `POST /api/upload/confirm` with `session_id` and selected patient indices to process
     """
     try:
         # Read file
@@ -1576,22 +1575,22 @@ async def upload_and_preview_csv(
         # Store session in memory (convert Pydantic model to dict for storage)
         upload_sessions[session_id] = session_data.model_dump()
 
-        # Return preview response (first 10 records)
-        preview_limit = min(10, len(parsed_records))
-        preview_records = parsed_records[:preview_limit]
+        # Count valid and invalid records
+        valid_count = sum(1 for r in parsed_records if r.validation_status == "valid")
+        invalid_count = len(parsed_records) - valid_count
 
-        return UploadPreviewResponse(
+        # Return response with ALL patient records
+        return UploadResponse(
             session_id=session_id,
-            upload_id=upload_id,
             file_name=file.filename,
             file_type=file_type,
             total_records=len(parsed_records),
-            parsed_records=len(parsed_records),
+            valid_records=valid_count,
+            invalid_records=invalid_count,
+            patients=parsed_records,  # Return all records, not just first 10
             validation_errors=validation_errors,
-            preview=preview_records,
             column_mapping=column_mapping,
-            required_fields=["firstName", "lastName", "dateOfBirth", "gender", "mrn"],
-            optional_fields=["phone", "email", "address", "city", "state", "zip"],
+            expires_at=expires_at.isoformat(),
             timestamp=uploaded_at.isoformat()
         )
 
@@ -1600,35 +1599,34 @@ async def upload_and_preview_csv(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
 
-@app.post("/api/confirm-upload", response_model=ConfirmUploadResponse, tags=["Preview & Confirmation Workflow"])
+@app.post("/api/upload/confirm", response_model=ConfirmUploadResponse, tags=["Upload & Processing"])
 async def confirm_and_process_upload(request: ConfirmUploadRequest):
     """
-    **PHASE 2: Confirm & Process (Destructive)**
+    **Confirm and Process Selected Patients**
 
-    Confirm the upload and process selected patients.
-    This retrieves the session data, filters to selected patients, and processes them.
+    After reviewing the preview data from `/api/upload`, confirm which patients to process
+    and send to Mirth Connect. This endpoint generates HL7 messages and transmits them.
 
     **Workflow:**
-    1. Retrieve session data from cache using session_id
-    2. Filter to only selected patient indices (empty array = all)
-    3. Generate HL7 messages for selected patients
-    4. Send to Mirth via MLLP (if enabled)
-    5. Stream progress via SSE
-    6. Clean up session after completion
+    1. Retrieve upload session using `session_id`
+    2. Filter to selected patient indices (empty array = process all valid patients)
+    3. Generate HL7 ADT messages for each selected patient
+    4. Send messages to Mirth Connect via MLLP protocol
+    5. Stream real-time progress via Server-Sent Events (SSE)
 
     **Request Body:**
-    - session_id: Session ID from /api/upload-preview
-    - selected_indices: Array of patient indices to process (empty = all)
-    - send_to_mirth: Whether to send to Mirth Connect
+    - `session_id`: Session ID from `/api/upload` response
+    - `selected_indices`: Array of patient indices to process (empty = all valid patients)
+    - `send_to_mirth`: Set to `true` to send to Mirth, `false` for dry-run
 
     **Returns:**
-    - upload_id: Use this to connect to SSE stream
-    - stream_url: URL for real-time progress updates
-    - status: "processing"
-    - total_selected: Number of patients being processed
+    - `upload_id`: Unique processing job ID
+    - `status`: Always "processing" initially
+    - `total_selected`: Number of patients being processed
+    - `stream_url`: SSE endpoint URL for real-time progress updates
 
     **Next Step:**
-    Connect to `/api/upload/{upload_id}/stream` for real-time progress updates
+    Connect to the `stream_url` using EventSource to monitor real-time processing progress
     """
     try:
         # Retrieve session from cache
@@ -1686,9 +1684,9 @@ async def confirm_and_process_upload(request: ConfirmUploadRequest):
 
         return ConfirmUploadResponse(
             upload_id=processing_upload_id,
-            session_id=request.session_id,
             status="processing",
             total_selected=len(selected_records),
+            message=f"Processing {len(selected_records)} patient(s)",
             stream_url=f"/api/upload/{processing_upload_id}/stream"
         )
 
@@ -1697,80 +1695,34 @@ async def confirm_and_process_upload(request: ConfirmUploadRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error confirming upload: {str(e)}")
 
-@app.get("/api/upload/{session_id}/preview", tags=["Preview & Confirmation Workflow"])
-async def get_preview_paginated(
-    session_id: str,
-    offset: int = 0,
-    limit: int = 50
-):
-    """
-    Get paginated preview of parsed patients
-
-    **Use this for large files where you need to load more records**
-
-    **Returns:**
-    - session_id: Session ID
-    - total_records: Total number of patients
-    - offset: Current offset
-    - limit: Current limit
-    - records: Array of patient records
-    """
-    try:
-        # Retrieve session from cache
-        if session_id not in upload_sessions:
-            raise HTTPException(status_code=404, detail="Session not found or expired.")
-
-        session_data_dict = upload_sessions[session_id]
-        session_data = UploadSession(**session_data_dict)
-
-        # Check if session has expired
-        expires_at = datetime.fromisoformat(session_data.expires_at)
-        if datetime.now() > expires_at:
-            del upload_sessions[session_id]
-            raise HTTPException(status_code=410, detail="Session has expired.")
-
-        # Get paginated records
-        total_records = len(session_data.parsed_records)
-        records = session_data.parsed_records[offset:offset+limit]
-
-        return {
-            "session_id": session_id,
-            "total_records": total_records,
-            "offset": offset,
-            "limit": limit,
-            "records": [r.model_dump() for r in records]
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error retrieving preview: {str(e)}")
-
-@app.post("/api/upload", tags=["Real-Time Upload"])
+@app.post("/api/upload-legacy", tags=["Legacy Upload"])
 async def upload_csv_with_realtime_progress(
     file: UploadFile = File(..., description="CSV or Excel file with patient data"),
     trigger_event: str = Form("ADT-A01", description="HL7 trigger event"),
     send_to_mirth: bool = Form(False, description="Send to Mirth after generation")
 ):
     """
-    Upload CSV file and start background processing with real-time updates
+    **Legacy Upload Mode - Direct Processing Without Preview**
 
-    **6-Step Workflow:**
-    1. Upload file → Create session
-    2. Parse CSV → Extract patient data
-    3. Select patients → Auto-select all
-    4. Generate HL7 → Create messages
-    5. Send to Mirth → If enabled
-    6. Complete → Show results
+    This endpoint uploads a file and immediately starts processing ALL patients without preview.
+    Use this for automated workflows where preview/confirmation is not needed.
+
+    **Recommended**: Use `POST /api/upload` + `POST /api/upload/confirm` workflow instead for better control.
+
+    **Workflow:**
+    1. Upload file and parse all patients
+    2. Automatically process ALL valid patients
+    3. Generate HL7 messages for each patient
+    4. Send to Mirth Connect (if enabled)
+    5. Stream real-time progress via SSE
 
     **Returns:**
-    - upload_id: Use this to connect to SSE stream at `/api/upload/{upload_id}/stream`
-    - filename: Original filename
-    - status: "processing"
-    - message: Instructions for getting real-time updates
+    - `upload_id`: Use to connect to SSE stream
+    - `status`: "processing"
+    - `message`: Next steps
 
-    **Next Steps:**
-    Connect to `/api/upload/{upload_id}/stream` for real-time progress updates via Server-Sent Events
+    **Next Step:**
+    Connect to `/api/upload/{upload_id}/stream` for real-time progress
     """
     try:
         # Read file
