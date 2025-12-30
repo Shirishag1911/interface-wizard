@@ -103,8 +103,15 @@ PV1|1|O|||||||||||||||||...
 ### Prerequisites
 
 ```bash
-# 1. Install dependencies
-pip install fastapi uvicorn pandas openpyxl openai python-multipart
+# 1. Install dependencies from requirements.txt
+cd actual-code
+pip install -r requirements.txt
+
+# Note: The openai library (v1.10.0) works with BOTH OpenAI and Ollama Cloud
+# Ollama Cloud provides an OpenAI-compatible API, so no additional library needed!
+
+# Optional: For running automated tests
+pip install sseclient-py
 
 # 2. Start Mirth Connect on port 6661
 

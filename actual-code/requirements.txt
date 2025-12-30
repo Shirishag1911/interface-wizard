@@ -1,8 +1,19 @@
+# Core API Framework
 fastapi==0.109.0
 uvicorn[standard]==0.27.0
 pydantic==2.5.3
+python-multipart==0.0.6
+
+# Data Processing
 pandas==2.1.4
 openpyxl==3.1.2
+
+# HL7 Message Handling
 hl7==0.4.5
+
+# LLM Integration (Works with both OpenAI and Ollama Cloud)
+# The openai library supports Ollama Cloud via base_url parameter
 openai==1.10.0
-python-multipart==0.0.6
+
+# Optional: For SSE stream testing (used by test_end_to_end.py)
+# sseclient-py==1.8.0  # Uncomment if running automated tests
