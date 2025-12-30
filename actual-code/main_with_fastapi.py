@@ -2177,7 +2177,7 @@ async def confirm_and_process_upload(request: ConfirmUploadRequest):
             upload_id=processing_upload_id,
             selected_records=selected_records,
             trigger_event=session_data.trigger_event,
-            send_to_mirth=request.send_to_mirth
+            send_to_mirth_enabled=request.send_to_mirth
         ))
 
         return ConfirmUploadResponse(
