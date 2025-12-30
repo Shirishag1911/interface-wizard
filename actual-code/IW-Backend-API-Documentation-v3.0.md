@@ -288,6 +288,7 @@ curl -X POST http://localhost:8000/api/upload \
 |-----------|------|----------|---------|-------------|
 | `file` | File | Yes | - | CSV or Excel file (.csv, .xlsx, .xls) |
 | `trigger_event` | string | No | ADT-A01 | HL7 trigger event type |
+| `use_llm_mapping` | boolean | No | true | Use LLM for intelligent column mapping |
 
 **Response** (200 OK):
 ```json
@@ -897,9 +898,70 @@ MRN003,Bob,Johnson,1975-12-10,M,555-9012,bob@example.com
 
 ### Dynamic Column Matching
 
-The backend uses **intelligent fuzzy matching** to automatically detect column names, eliminating the need for exact column name formatting.
+The backend supports **TWO intelligent mapping strategies** to automatically detect column names:
 
-#### How It Works
+1. **🤖 LLM-Based Mapping** (Default, Recommended) - Uses OpenAI GPT-4o-mini for true intelligence
+2. **🔧 Fuzzy Matching** (Fallback) - Rule-based keyword detection
+
+#### 🤖 LLM-Based Column Mapping (NEW!)
+
+**The truly intelligent approach** - Uses AI to understand column names contextually.
+
+**How It Works:**
+- Sends column names to GPT-4o-mini
+- LLM analyzes semantics, context, and meaning
+- Returns mapping with confidence scores
+- Handles any variation, typo, or language
+- **No need to maintain keyword lists**
+
+**Advantages:**
+✅ **True intelligence** - Understands context (e.g., "Full Name" vs "Last Name")
+✅ **Infinite variations** - Works with ANY reasonable column name
+✅ **Typo tolerant** - Handles misspellings intelligently
+✅ **Multi-language support** - Can understand non-English column names
+✅ **Complex reasoning** - Can split compound fields
+✅ **Self-improving** - Gets better as LLM models improve
+✅ **Confidence scores** - Shows how certain the mapping is
+✅ **Warnings** - Flags ambiguous mappings
+
+**Example LLM Mapping:**
+
+Input columns:
+```json
+["Patient Last Name", "Pateint First Name", "Email Address", "Phone Number"]
+```
+
+LLM Output:
+```json
+{
+  "mappings": [
+    {"column": "Patient Last Name", "field": "lastName", "confidence": 1.0},
+    {"column": "Pateint First Name", "field": "firstName", "confidence": 0.98},
+    {"column": "Email Address", "field": "email", "confidence": 1.0},
+    {"column": "Phone Number", "field": "phone", "confidence": 1.0}
+  ],
+  "warnings": ["Detected typo in 'Pateint First Name' - mapped to firstName"],
+  "unmapped": []
+}
+```
+
+**When LLM is Used:**
+- By default (`use_llm_mapping=true`)
+- When OpenAI API key is configured
+- Automatically falls back to fuzzy matching if LLM fails
+
+**How to Disable:**
+```bash
+curl -X POST http://localhost:8000/api/upload \
+  -F "file=@patients.xlsx" \
+  -F "use_llm_mapping=false"  # Use fuzzy matching instead
+```
+
+#### 🔧 Fuzzy Matching (Fallback)
+
+Rule-based approach using keyword detection (used when LLM is disabled or unavailable).
+
+**How It Works**
 
 The system employs a multi-strategy approach:
 

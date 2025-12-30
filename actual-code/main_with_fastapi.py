@@ -396,6 +396,163 @@ def normalize_column_name(column: str) -> Optional[str]:
     logger.warning(f"❌ Could not map column '{column}' to any standard field")
     return None
 
+def map_columns_with_llm(column_names: List[str], use_llm: bool = True) -> Dict[str, Any]:
+    """
+    Use LLM to intelligently map CSV/Excel column names to standard fields.
+
+    This is the INTELLIGENT approach - LLM understands context and semantics,
+    no need to maintain endless keyword lists.
+
+    Args:
+        column_names: List of column names from uploaded file
+        use_llm: If True, use LLM; if False, fall back to fuzzy matching only
+
+    Returns:
+        Dictionary with:
+        - mapping: Dict[str, str] - column_name -> standard_field
+        - confidence: Dict[str, float] - confidence scores (0.0-1.0)
+        - warnings: List[str] - validation warnings
+        - unmapped: List[str] - columns that couldn't be mapped
+    """
+
+    result = {
+        "mapping": {},
+        "confidence": {},
+        "warnings": [],
+        "unmapped": []
+    }
+
+    if not use_llm or not OPENAI_SDK_AVAILABLE:
+        logger.info("🔧 Using fallback fuzzy matching (LLM disabled or unavailable)")
+        # Fall back to existing fuzzy matching
+        for col in column_names:
+            mapped = normalize_column_name(col)
+            if mapped:
+                result["mapping"][col] = mapped
+                result["confidence"][col] = 0.7  # Fuzzy match confidence
+            else:
+                result["unmapped"].append(col)
+        return result
+
+    # Prepare LLM prompt
+    standard_fields = {
+        "firstName": "Patient's first/given name",
+        "lastName": "Patient's last/family/surname",
+        "dateOfBirth": "Date of birth (DOB)",
+        "gender": "Gender/sex (Male/Female/Other)",
+        "mrn": "Medical Record Number",
+        "phone": "Phone/telephone/mobile number",
+        "email": "Email address",
+        "address": "Street address",
+        "city": "City/town",
+        "state": "State/province/region",
+        "zip": "ZIP/postal code"
+    }
+
+    prompt = f"""You are a healthcare data mapping expert. Map the following CSV/Excel column names to standard patient data fields.
+
+Available standard fields:
+{json.dumps(standard_fields, indent=2)}
+
+Column names from uploaded file:
+{json.dumps(column_names, indent=2)}
+
+Instructions:
+1. Map each column to the most appropriate standard field
+2. Provide confidence score (0.0-1.0) for each mapping
+3. Flag ambiguous or unmappable columns
+4. Handle typos intelligently (e.g., "Pateint" → firstName)
+5. Handle compound names (e.g., "Email Address" → email)
+6. Handle prefixes (e.g., "Patient First Name" → firstName)
+
+Return ONLY a valid JSON object with this exact structure:
+{{
+  "mappings": [
+    {{"column": "column_name", "field": "standard_field", "confidence": 0.95}},
+    ...
+  ],
+  "warnings": ["warning message if ambiguous", ...],
+  "unmapped": ["column_name if cannot map", ...]
+}}
+
+Example:
+Input: ["Patient Last Name", "DOB", "Email Address"]
+Output:
+{{
+  "mappings": [
+    {{"column": "Patient Last Name", "field": "lastName", "confidence": 1.0}},
+    {{"column": "DOB", "field": "dateOfBirth", "confidence": 1.0}},
+    {{"column": "Email Address", "field": "email", "confidence": 0.95}}
+  ],
+  "warnings": [],
+  "unmapped": []
+}}"""
+
+    try:
+        logger.info(f"🤖 Sending {len(column_names)} column names to LLM for intelligent mapping...")
+
+        client = OpenAI(api_key=OPENAI_API_KEY)
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",  # Fast and cost-effective for this task
+            messages=[
+                {"role": "system", "content": "You are a healthcare data mapping expert. Return only valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.0,  # Deterministic output
+            max_tokens=1000
+        )
+
+        llm_output = response.choices[0].message.content.strip()
+        logger.info(f"📥 LLM Response: {llm_output[:200]}...")
+
+        # Parse LLM response
+        # Remove markdown code blocks if present
+        if "```json" in llm_output:
+            llm_output = llm_output.split("```json")[1].split("```")[0].strip()
+        elif "```" in llm_output:
+            llm_output = llm_output.split("```")[1].split("```")[0].strip()
+
+        llm_result = json.loads(llm_output)
+
+        # Process mappings
+        for mapping in llm_result.get("mappings", []):
+            col = mapping["column"]
+            field = mapping["field"]
+            confidence = mapping.get("confidence", 0.8)
+
+            result["mapping"][col] = field
+            result["confidence"][col] = confidence
+
+            logger.info(f"✅ LLM Mapping: '{col}' → '{field}' (confidence: {confidence:.2f})")
+
+        result["warnings"] = llm_result.get("warnings", [])
+        result["unmapped"] = llm_result.get("unmapped", [])
+
+        # Log warnings
+        for warning in result["warnings"]:
+            logger.warning(f"⚠️  LLM Warning: {warning}")
+
+        # Log unmapped columns
+        for unmapped in result["unmapped"]:
+            logger.warning(f"❌ LLM could not map: '{unmapped}'")
+
+        logger.info(f"✅ LLM mapping complete: {len(result['mapping'])}/{len(column_names)} columns mapped")
+
+    except Exception as e:
+        logger.error(f"❌ LLM mapping failed: {e}")
+        logger.info("🔄 Falling back to fuzzy matching...")
+
+        # Fall back to fuzzy matching
+        for col in column_names:
+            mapped = normalize_column_name(col)
+            if mapped:
+                result["mapping"][col] = mapped
+                result["confidence"][col] = 0.7
+            else:
+                result["unmapped"].append(col)
+
+    return result
+
 def parse_date_flexible(date_value: Any) -> Optional[str]:
     """
     Parse date from various formats to YYYY-MM-DD
@@ -465,9 +622,15 @@ def validate_patient_record(patient: Dict[str, Any]) -> tuple[str, List[str]]:
 
     return status, messages
 
-def parse_csv_with_preview(df: pd.DataFrame, file_name: str, trigger_event: str = "ADT-A01") -> Tuple[List[PatientRecord], List[ValidationError], Dict[str, str]]:
+def parse_csv_with_preview(df: pd.DataFrame, file_name: str, trigger_event: str = "ADT-A01", use_llm_mapping: bool = True) -> Tuple[List[PatientRecord], List[ValidationError], Dict[str, str]]:
     """
     Parse CSV/Excel file and create PatientRecord objects with UUIDs
+
+    Args:
+        df: DataFrame from uploaded CSV/Excel
+        file_name: Original filename
+        trigger_event: HL7 trigger event type
+        use_llm_mapping: If True, use LLM for intelligent column mapping; if False, use fuzzy matching
 
     Returns:
         - parsed_records: List of PatientRecord objects with UUIDs
@@ -478,11 +641,37 @@ def parse_csv_with_preview(df: pd.DataFrame, file_name: str, trigger_event: str 
     validation_errors = []
     column_mapping = {}
 
-    # Build column mapping using COLUMN_MAPPINGS
-    for col in df.columns:
-        standard_field = normalize_column_name(col)
-        if standard_field:
-            column_mapping[col] = standard_field
+    # Build column mapping using LLM or fuzzy matching
+    if use_llm_mapping:
+        logger.info("🤖 Using LLM-based intelligent column mapping...")
+        llm_result = map_columns_with_llm(list(df.columns), use_llm=True)
+        column_mapping = llm_result["mapping"]
+
+        # Add warnings to validation errors
+        for warning in llm_result["warnings"]:
+            validation_errors.append(ValidationError(
+                row=0,
+                field="column_mapping",
+                error=warning,
+                value=None,
+                severity="warning"
+            ))
+
+        # Add unmapped columns to validation errors
+        for unmapped in llm_result["unmapped"]:
+            validation_errors.append(ValidationError(
+                row=0,
+                field=unmapped,
+                error=f"Could not map column '{unmapped}' to any standard field",
+                value=None,
+                severity="warning"
+            ))
+    else:
+        logger.info("🔧 Using fuzzy matching for column mapping...")
+        for col in df.columns:
+            standard_field = normalize_column_name(col)
+            if standard_field:
+                column_mapping[col] = standard_field
 
     # Iterate through rows and create PatientRecord objects
     for index, row in df.iterrows():
@@ -1697,7 +1886,8 @@ async def get_system_status():
 @app.post("/api/upload", response_model=UploadResponse, tags=["Upload & Processing"])
 async def upload_csv_file(
     file: UploadFile = File(..., description="CSV or Excel file with patient data"),
-    trigger_event: str = Form("ADT-A01", description="HL7 trigger event (default: ADT-A01)")
+    trigger_event: str = Form("ADT-A01", description="HL7 trigger event (default: ADT-A01)"),
+    use_llm_mapping: bool = Form(True, description="Use LLM for intelligent column mapping (default: True)")
 ):
     """
     **Upload CSV/Excel File and Get Preview Data**
@@ -1744,7 +1934,8 @@ async def upload_csv_file(
         parsed_records, validation_errors, column_mapping = parse_csv_with_preview(
             df=df,
             file_name=file.filename,
-            trigger_event=trigger_event
+            trigger_event=trigger_event,
+            use_llm_mapping=use_llm_mapping
         )
 
         # LOG: Show column mapping results
