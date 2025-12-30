@@ -59,13 +59,19 @@ MIRTH_HOST = "localhost"
 MIRTH_PORT = 6661
 
 # ==================== LOGGING CONFIGURATION ====================
-# Configure logging
+# Fix Windows console encoding for emoji support
+if sys.platform == 'win32':
+    # Set UTF-8 encoding for Windows console
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+
+# Configure logging with UTF-8 support
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler('interface_wizard.log')
+        logging.FileHandler('interface_wizard.log', encoding='utf-8')
     ]
 )
 logger = logging.getLogger(__name__)
