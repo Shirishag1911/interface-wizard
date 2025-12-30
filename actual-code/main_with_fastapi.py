@@ -37,7 +37,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
 
-# Attempt to import OpenAI SDK
+# Attempt to import OpenAI SDK (for Ollama Cloud compatibility)
 try:
     from openai import OpenAI
     OPENAI_SDK_AVAILABLE = True
@@ -45,7 +45,16 @@ except Exception:
     OPENAI_SDK_AVAILABLE = False
 
 # ==================== CONFIGURATION ====================
-OPENAI_API_KEY = "your-openai-api-key-here"  # TODO: Replace with your actual OpenAI API key
+# Ollama Cloud Configuration (Free alternative to OpenAI)
+USE_OLLAMA_CLOUD = True  # Set to False to use OpenAI instead
+OLLAMA_API_KEY = "21fd147c52c4460e8083c9a660e2c158._3CZGjnMdm-00AnCwvnOe9Bx"
+OLLAMA_BASE_URL = "https://cloud.ollama.ai/v1"  # Ollama Cloud endpoint
+OLLAMA_MODEL = "glm4:latest"  # GLM4 9B model - best free model on Ollama Cloud
+
+# OpenAI Configuration (fallback)
+OPENAI_API_KEY = "your-openai-api-key-here"  # Only used if USE_OLLAMA_CLOUD = False
+
+# Mirth Connect Configuration
 MIRTH_HOST = "localhost"
 MIRTH_PORT = 6661
 
@@ -489,11 +498,25 @@ Output:
 }}"""
 
     try:
-        logger.info(f"🤖 Sending {len(column_names)} column names to LLM for intelligent mapping...")
+        # Choose LLM provider
+        if USE_OLLAMA_CLOUD:
+            logger.info(f"🤖 Using Ollama Cloud ({OLLAMA_MODEL}) for column mapping...")
+            logger.info(f"📤 Sending {len(column_names)} column names to Ollama Cloud...")
 
-        client = OpenAI(api_key=OPENAI_API_KEY)
+            client = OpenAI(
+                api_key=OLLAMA_API_KEY,
+                base_url=OLLAMA_BASE_URL
+            )
+            model = OLLAMA_MODEL
+        else:
+            logger.info(f"🤖 Using OpenAI (gpt-4o-mini) for column mapping...")
+            logger.info(f"📤 Sending {len(column_names)} column names to OpenAI...")
+
+            client = OpenAI(api_key=OPENAI_API_KEY)
+            model = "gpt-4o-mini"
+
         response = client.chat.completions.create(
-            model="gpt-4o-mini",  # Fast and cost-effective for this task
+            model=model,
             messages=[
                 {"role": "system", "content": "You are a healthcare data mapping expert. Return only valid JSON."},
                 {"role": "user", "content": prompt}
@@ -1175,30 +1198,13 @@ async def process_confirmed_patients(
 
         for idx, patient in enumerate(selected_records, 1):
             logger.info(f"📝 Processing patient {idx}/{len(selected_records)}: {patient.firstName} {patient.lastName} (MRN: {patient.mrn}, UUID: {patient.uuid})")
-            # Build command for HL7 generation
-            command = f"""
-Trigger Event: {trigger_event}
-Patient ID: {patient.mrn}
-Patient UUID: {patient.uuid}
-Patient Name: {patient.lastName} {patient.firstName}
-Date of Birth: {patient.dateOfBirth}
-Gender: {patient.gender}
-Address: {patient.address or ''}
-City: {patient.city or ''}
-State: {patient.state or ''}
-Zip: {patient.zip or ''}
-Phone: {patient.phone or ''}
-Email: {patient.email or ''}
-Create an {trigger_event} message for patient {patient.firstName} {patient.lastName}, ID {patient.mrn}, UUID {patient.uuid}, DOB {patient.dateOfBirth}, Gender {patient.gender}
-"""
 
-            # Generate HL7 message
+            # Generate HL7 message PROGRAMMATICALLY (NO LLM!)
             try:
-                hl7_message = generate_hl7_message(client_wrapper, command)
+                # Build HL7 message using proper message builder
+                hl7_message = build_hl7_message_programmatically(patient, trigger_event)
 
-                # Add custom ZPI segment with UUID
-                hl7_message = add_zpi_segment_with_uuid(hl7_message, patient.uuid)
-
+                # Validate message structure
                 validation = validate_required_fields_api(hl7_message)
 
                 message_result = {
@@ -1218,8 +1224,8 @@ Create an {trigger_event} message for patient {patient.firstName} {patient.lastN
                 # Update dashboard stats
                 dashboard_stats["hl7_messages_generated"] += 1
 
-                # Rate limiting: wait 1 second between messages
-                await asyncio.sleep(1.0)
+                # Small delay for UI updates (no need for long delay - not using LLM!)
+                await asyncio.sleep(0.1)
 
             except Exception as e:
                 error_result = {
@@ -1322,6 +1328,86 @@ Create an {trigger_event} message for patient {patient.firstName} {patient.lastN
         logger.error(f"   Exception Type: {type(e).__name__}")
         logger.error("="*80)
 
+def build_hl7_message_programmatically(patient: PatientRecord, trigger_event: str = "ADT-A01") -> str:
+    """
+    Build HL7 v2.5 message programmatically (NO LLM needed!)
+
+    This is the PROPER way - deterministic, fast, spec-compliant.
+
+    Supported message types:
+    - ADT^A01: Admit/Visit Notification
+    - ADT^A04: Register a Patient
+    - ADT^A08: Update Patient Information
+    - ADT^A28: Add Person Information
+    - ADT^A31: Update Person Information
+
+    Args:
+        patient: PatientRecord with all patient data
+        trigger_event: HL7 trigger event (e.g., "ADT-A01", "ADT-A04")
+
+    Returns:
+        Complete HL7 message as string
+    """
+    from datetime import datetime
+
+    # Parse trigger event
+    message_type = trigger_event.split("-")[0]  # "ADT"
+    event_code = trigger_event.split("-")[1] if "-" in trigger_event else "A01"  # "A01"
+
+    # Generate timestamps
+    current_time = datetime.now().strftime("%Y%m%d%H%M%S")
+    message_control_id = str(uuid.uuid4())[:20].replace("-", "")  # Unique message ID
+
+    # Format DOB (remove dashes)
+    dob_formatted = patient.dateOfBirth.replace("-", "") if patient.dateOfBirth else ""
+
+    # Gender mapping
+    gender_code = patient.gender[0] if patient.gender else "U"  # M, F, O, U
+
+    # Build full address
+    address_parts = [
+        patient.address or "",
+        patient.city or "",
+        patient.state or "",
+        patient.zip or ""
+    ]
+    full_address = "^".join([p if p else "" for p in address_parts])
+
+    # ========== MSH - Message Header ==========
+    msh = f"MSH|^~\\&|InterfaceWizard|FACILITY|OpenEMR|HOSPITAL|{current_time}||{message_type}^{event_code}|{message_control_id}|P|2.5"
+
+    # ========== EVN - Event Type ==========
+    evn = f"EVN|{event_code}|{current_time}"
+
+    # ========== PID - Patient Identification ==========
+    pid = f"PID|1||{patient.mrn}^^^MRN||{patient.lastName}^{patient.firstName}||{dob_formatted}|{gender_code}|||{full_address}||{patient.phone or ''}|||||||||||||||||||"
+
+    # ========== ZPI - Custom UUID Segment ==========
+    zpi = f"ZPI|{patient.uuid}"
+
+    # ========== PV1 - Patient Visit (required for ADT) ==========
+    # Map trigger event to patient class
+    patient_class_map = {
+        "A01": "I",  # Inpatient
+        "A02": "I",  # Transfer
+        "A03": "I",  # Discharge
+        "A04": "O",  # Outpatient
+        "A05": "P",  # Pre-admit
+        "A08": "I",  # Update
+        "A11": "I",  # Cancel admit
+        "A13": "I",  # Cancel discharge
+        "A28": "O",  # Add person
+        "A31": "O",  # Update person
+    }
+    patient_class = patient_class_map.get(event_code, "O")
+    pv1 = f"PV1|1|{patient_class}|||||||||||||||||||||||||||||||||||||||||{current_time}"
+
+    # Assemble message
+    hl7_message = "\n".join([msh, evn, pid, zpi, pv1])
+
+    logger.info(f"✅ Built HL7 {trigger_event} message programmatically (no LLM)")
+    return hl7_message
+
 def add_zpi_segment_with_uuid(hl7_message: str, patient_uuid: str) -> str:
     """
     Add custom ZPI segment with patient UUID to HL7 message
@@ -1330,6 +1416,8 @@ def add_zpi_segment_with_uuid(hl7_message: str, patient_uuid: str) -> str:
     ZPI|<UUID>
 
     This is added after the PID segment
+
+    NOTE: This function is now DEPRECATED - use build_hl7_message_programmatically() instead
     """
     lines = hl7_message.split("\n")
     result_lines = []
