@@ -45,14 +45,14 @@ except Exception:
     OPENAI_SDK_AVAILABLE = False
 
 # ==================== CONFIGURATION ====================
-# Ollama Cloud Configuration (Free alternative to OpenAI)
-USE_OLLAMA_CLOUD = True  # Set to False to use OpenAI instead
+# LLM Configuration for Column Mapping
+USE_OLLAMA_CLOUD = False  # Set to True to use Ollama Cloud (free)
 OLLAMA_API_KEY = "21fd147c52c4460e8083c9a660e2c158._3CZGjnMdm-00AnCwvnOe9Bx"
-OLLAMA_BASE_URL = "https://cloud.ollama.ai/v1"  # Ollama Cloud endpoint
-OLLAMA_MODEL = "glm4:latest"  # GLM4 9B model - best free model on Ollama Cloud
+OLLAMA_BASE_URL = "https://cloud.ollama.ai/v1"
+OLLAMA_MODEL = "glm4:latest"
 
-# OpenAI Configuration (fallback)
-OPENAI_API_KEY = "your-openai-api-key-here"  # Only used if USE_OLLAMA_CLOUD = False
+# OpenAI Configuration (Currently Active)
+OPENAI_API_KEY = "your-openai-api-key-here"  # TODO: Replace with your OpenAI API key
 
 # Mirth Connect Configuration
 MIRTH_HOST = "localhost"
@@ -1162,7 +1162,7 @@ async def process_confirmed_patients(
     upload_id: str,
     selected_records: List[PatientRecord],
     trigger_event: str = "ADT-A01",
-    send_to_mirth: bool = True
+    send_to_mirth_enabled: bool = True  # RENAMED to avoid shadowing function
 ):
     """
     Background async task that processes confirmed patients with UUIDs
@@ -1183,7 +1183,7 @@ async def process_confirmed_patients(
     logger.info(f"📝 Upload ID: {upload_id}")
     logger.info(f"👥 Total Patients to Process: {len(selected_records)}")
     logger.info(f"⚙️  Trigger Event: {trigger_event}")
-    logger.info(f"🔧 Send to Mirth: {send_to_mirth}")
+    logger.info(f"🔧 Send to Mirth: {send_to_mirth_enabled}")
     logger.info("="*80)
 
     session = upload_sessions[upload_id]
@@ -1247,7 +1247,7 @@ async def process_confirmed_patients(
                 session["step_status"] = f"Generated {generated_count}/{len(selected_records)} messages (with errors)"
 
         # ========== STEP 3: Send to Mirth (if enabled) ==========
-        if send_to_mirth:
+        if send_to_mirth_enabled:
             session["current_step"] = 3
             session["step_status"] = "Sending to Mirth Connect..."
             session["mirth_successful"] = 0
@@ -1316,7 +1316,7 @@ async def process_confirmed_patients(
         logger.info(f"📊 FINAL SUMMARY:")
         logger.info(f"   Total Patients: {len(selected_records)}")
         logger.info(f"   HL7 Messages Generated: {len(session['generated_messages'])}")
-        if send_to_mirth:
+        if send_to_mirth_enabled:
             logger.info(f"   Mirth Successful: {session['mirth_successful']}")
             logger.info(f"   Mirth Failed: {session['mirth_failed']}")
         logger.info(f"   Upload ID: {upload_id}")
