@@ -60,17 +60,12 @@ export function UploadWizard({ onClose, onComplete }: UploadWizardProps) {
   // Normalize patient data for consistency
   function normalizePatients(apiPatients: any[]): Patient[] {
     return apiPatients.map((p, index) => {
-      // Handle backend format: {name, mrn, date_of_birth, gender, phone, email, address}
-      // Split name into firstName and lastName
-      const nameParts = (p.name || '').trim().split(' ');
-      const firstName = nameParts[0] || '';
-      const lastName = nameParts.slice(1).join(' ') || '';
-
+      // Backend v3.0 format: {firstName, lastName, dateOfBirth, gender, mrn, uuid, ...}
       return {
-        id: p.id ?? p.uuid ?? `patient-${index}`, // Generate ID if not provided
-        firstName: p.firstName?.trim() ?? firstName,
-        lastName: p.lastName?.trim() ?? lastName,
-        dateOfBirth: p.dateOfBirth ?? p.date_of_birth ?? '',
+        id: p.uuid ?? p.id ?? `patient-${index}`, // v3.0 uses uuid
+        firstName: p.firstName?.trim() ?? '',
+        lastName: p.lastName?.trim() ?? '',
+        dateOfBirth: p.dateOfBirth ?? '',
         gender: p.gender ?? '',
         mrn: p.mrn ?? '',
         ssn: p.ssn ?? undefined,
@@ -148,15 +143,15 @@ export function UploadWizard({ onClose, onComplete }: UploadWizardProps) {
       }
 
       const data = await response.json();
-      // Backend returns preview_id instead of session_id
-      setSessionId(data.preview_id);  // Store the preview_id for later use
-      // Backend returns preview_records instead of patients
-      const normalizedPatients = normalizePatients(data.preview_records || []);
+      // Backend v3.0 returns session_id and patients array
+      setSessionId(data.session_id);  // Store the session_id for later use
+      // Backend v3.0 returns patients array directly
+      const normalizedPatients = normalizePatients(data.patients || []);
       setPatients(normalizedPatients);
 
       addValidationIssue({
         type: 'info',
-        message: data.message || `File "${file.name}" processed successfully. Found ${normalizedPatients.length} patient records.`,
+        message: `File "${file.name}" processed successfully. Found ${data.valid_records || normalizedPatients.length} valid patient records out of ${data.total_records || normalizedPatients.length} total.`,
       });
       handleNext();
     } catch (error: any) {
@@ -204,8 +199,9 @@ export function UploadWizard({ onClose, onComplete }: UploadWizardProps) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          preview_id: sessionId,  // Backend expects preview_id
-          confirmed: true,  // Backend expects confirmed boolean
+          session_id: sessionId,          // Backend v3.0 expects session_id
+          selected_indices: selectedIndices,  // Array of indices to process
+          send_to_mirth: true,            // Send to Mirth Connect
         }),
       });
 
@@ -216,7 +212,7 @@ export function UploadWizard({ onClose, onComplete }: UploadWizardProps) {
       const data = await response.json();
       addValidationIssue({
         type: 'info',
-        message: data.message || `Successfully processed ${data.records_succeeded || 0} patients and sent to Mirth!`,
+        message: `Successfully processed ${data.processed_count || selected.length} patients and sent to Mirth!`,
       });
     } catch (error: any) {
       addValidationIssue({
