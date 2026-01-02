@@ -4,14 +4,15 @@
 import axios, { AxiosInstance } from 'axios';
 import { CommandRequest, OperationResponse, SessionInfo, HealthStatus } from '../types';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const API_V1_BASE = `${API_BASE_URL}/api/v1`;
 
 class ApiService {
   private client: AxiosInstance;
 
   constructor() {
     this.client = axios.create({
-      baseURL: API_BASE_URL,
+      baseURL: API_V1_BASE,
       headers: {
         'Content-Type': 'application/json',
       },
