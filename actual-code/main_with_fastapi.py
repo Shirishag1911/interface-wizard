@@ -1761,7 +1761,7 @@ async def generate_hl7_from_command(request: HL7GenerationRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating HL7 message: {str(e)}")
 
-@app.post("/api/validate-hl7", response_model=HL7ValidationResponse, tags=["HL7 Validation"])
+# @app.post("/api/validate-hl7", response_model=HL7ValidationResponse, tags=["HL7 Validation"])
 async def validate_hl7_message(hl7_message: str = Form(...)):
     """
     Validate an HL7 message
@@ -1782,7 +1782,7 @@ async def validate_hl7_message(hl7_message: str = Form(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error validating HL7 message: {str(e)}")
 
-@app.post("/api/send-to-mirth", response_model=MirthSendResponse, tags=["Mirth Integration"])
+# @app.post("/api/send-to-mirth", response_model=MirthSendResponse, tags=["Mirth Integration"])
 async def send_hl7_to_mirth(hl7_message: str = Form(...)):
     """
     Send HL7 message to Mirth Connect
@@ -1805,7 +1805,7 @@ async def send_hl7_to_mirth(hl7_message: str = Form(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error sending to Mirth: {str(e)}")
 
-@app.post("/api/upload-excel", response_model=BatchProcessingResponse, tags=["Bulk Processing"])
+# @app.post("/api/upload-excel", response_model=BatchProcessingResponse, tags=["Bulk Processing"])
 async def upload_and_process_excel(
     file: UploadFile = File(..., description="Excel or CSV file with patient data"),
     trigger_event: str = Form("ADT-A01", description="HL7 trigger event (e.g., ADT-A01, ADT-A04)"),
@@ -2193,7 +2193,7 @@ async def confirm_and_process_upload(request: ConfirmUploadRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error confirming upload: {str(e)}")
 
-@app.post("/api/upload-legacy", tags=["Legacy Upload"])
+# @app.post("/api/upload-legacy", tags=["Legacy Upload"])
 async def upload_csv_with_realtime_progress(
     file: UploadFile = File(..., description="CSV or Excel file with patient data"),
     trigger_event: str = Form("ADT-A01", description="HL7 trigger event"),
@@ -2409,6 +2409,73 @@ async def get_upload_results(upload_id: str):
         "messages": messages,
         "error": session.get("error")
     }
+
+@app.get("/api/upload/{upload_id}/download", tags=["Real-Time Upload"])
+async def download_hl7_messages(upload_id: str):
+    """
+    **Download HL7 Messages as ZIP File**
+
+    Download all generated HL7 messages for a specific upload session as a ZIP file.
+    Each patient's HL7 message is saved as a separate .hl7 file inside the ZIP.
+
+    **Parameters:**
+    - upload_id: Upload session ID (from /api/upload/confirm response)
+
+    **Returns:**
+    - ZIP file containing individual .hl7 files
+    - Filename format: MRN001_ADT_A04.hl7, MRN002_ADT_A04.hl7, etc.
+
+    **Example:**
+    - GET /api/upload/662d9ed4-0c10-4417-bec6-1d1416755cc0/download
+    """
+    from fastapi.responses import Response
+    import zipfile
+    from io import BytesIO
+
+    try:
+        if upload_id not in upload_sessions:
+            raise HTTPException(status_code=404, detail="Upload session not found")
+
+        session = upload_sessions[upload_id]
+        messages = session.get("generated_messages", [])
+
+        if not messages:
+            raise HTTPException(status_code=404, detail="No HL7 messages found for this upload")
+
+        # Create ZIP file in memory
+        zip_buffer = BytesIO()
+
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            for idx, msg_data in enumerate(messages, 1):
+                # Extract HL7 message text
+                hl7_message = msg_data.get("hl7_message", "")
+
+                # Get patient info for filename
+                patient_mrn = msg_data.get("mrn", f"patient_{idx}")
+                trigger_event = msg_data.get("trigger_event", "ADT_A04").replace("^", "_")
+
+                # Create filename: MRN001_ADT_A04.hl7
+                filename = f"{patient_mrn}_{trigger_event}.hl7"
+
+                # Add to ZIP
+                zip_file.writestr(filename, hl7_message)
+
+        # Prepare ZIP for download
+        zip_buffer.seek(0)
+
+        # Return as downloadable file
+        return Response(
+            content=zip_buffer.getvalue(),
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f"attachment; filename=hl7_messages_{upload_id[:8]}.zip"
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating download: {str(e)}")
 
 # ==================== CONSOLE MODE (Original Functionality) ====================
 def upload_excel_file():
