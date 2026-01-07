@@ -1651,6 +1651,220 @@ export function CompleteStep({
 
 ---
 
+### 6. Dashboard Stats Refresh
+
+When the wizard closes, the dashboard statistics should be refreshed to reflect the newly processed patients.
+
+**Implementation in Dashboard.tsx**:
+
+```typescript
+import { useState, useEffect } from 'react';
+
+export function Dashboard({ onNewUpload }: DashboardProps) {
+  const [statsData, setStatsData] = useState({
+    total_processed: 0,
+    hl7_messages: 0,
+    successful_sends: 0,
+    failed_sends: 0,
+    success_rate: 0,
+  });
+
+  const loadStats = async () => {
+    try {
+      const response = await fetch('http://localhost:8000/api/dashboard/stats');
+      const data = await response.json();
+      setStatsData(data);
+    } catch (error) {
+      console.error('Failed to load stats:', error);
+    }
+  };
+
+  useEffect(() => {
+    // Load stats on mount
+    loadStats();
+  }, []);
+
+  // Expose loadStats function to parent component or use context
+  return (
+    <div>
+      {/* Dashboard content */}
+    </div>
+  );
+}
+```
+
+**Implementation in App.tsx**:
+
+```typescript
+import { useState, useRef } from 'react';
+import { Dashboard } from './components/Dashboard';
+import { UploadWizard } from './components/UploadWizard';
+
+export function App() {
+  const [showWizard, setShowWizard] = useState(false);
+  const dashboardRef = useRef<{ refreshStats: () => void }>(null);
+
+  const handleWizardComplete = () => {
+    setShowWizard(false);
+
+    // Refresh dashboard stats after wizard closes
+    if (dashboardRef.current) {
+      dashboardRef.current.refreshStats();
+    }
+  };
+
+  return (
+    <div>
+      {showWizard ? (
+        <UploadWizard onComplete={handleWizardComplete} />
+      ) : (
+        <Dashboard
+          ref={dashboardRef}
+          onNewUpload={() => setShowWizard(true)}
+        />
+      )}
+    </div>
+  );
+}
+```
+
+**Alternative: Using Context API**:
+
+```typescript
+// DashboardContext.tsx
+import { createContext, useContext, useState } from 'react';
+
+interface DashboardContextType {
+  refreshStats: () => void;
+}
+
+const DashboardContext = createContext<DashboardContextType | null>(null);
+
+export function useDashboard() {
+  const context = useContext(DashboardContext);
+  if (!context) throw new Error('useDashboard must be used within DashboardProvider');
+  return context;
+}
+
+export function DashboardProvider({ children }: { children: React.ReactNode }) {
+  const refreshStats = async () => {
+    // Trigger stats reload
+    window.dispatchEvent(new CustomEvent('refreshDashboardStats'));
+  };
+
+  return (
+    <DashboardContext.Provider value={{ refreshStats }}>
+      {children}
+    </DashboardContext.Provider>
+  );
+}
+
+// In Dashboard.tsx
+useEffect(() => {
+  const handleRefresh = () => loadStats();
+
+  window.addEventListener('refreshDashboardStats', handleRefresh);
+
+  return () => {
+    window.removeEventListener('refreshDashboardStats', handleRefresh);
+  };
+}, []);
+
+// In CompleteStep.tsx
+const { refreshStats } = useDashboard();
+
+const handleComplete = () => {
+  refreshStats();
+  onComplete();
+};
+```
+
+**Updated CompleteStep.tsx with Dashboard Refresh**:
+
+```typescript
+import { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Download, Eye, Copy, FileSpreadsheet } from 'lucide-react';
+import { HL7PreviewModal } from './HL7PreviewModal';
+import { downloadAllAsZip } from '@/utils/hl7Download';
+import { copyAllMessages } from '@/utils/hl7Clipboard';
+import { exportMetadataAsCSV } from '@/utils/hl7Export';
+
+interface CompleteStepProps {
+  uploadId: string;
+  patientCount: number;
+  messageCount: number;
+  onComplete: () => void;
+}
+
+export function CompleteStep({
+  uploadId,
+  patientCount,
+  messageCount,
+  onComplete
+}: CompleteStepProps) {
+  const [showPreview, setShowPreview] = useState(false);
+
+  const handleCloseWizard = async () => {
+    // Trigger dashboard refresh
+    window.dispatchEvent(new CustomEvent('refreshDashboardStats'));
+
+    // Close wizard
+    onComplete();
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Success Message */}
+      <div className="text-center">
+        <div className="text-6xl mb-4">✅</div>
+        <h2 className="text-2xl font-bold mb-2">Processing Complete!</h2>
+        <p className="text-gray-600">
+          Successfully processed {patientCount} patients and generated {messageCount} HL7 messages.
+        </p>
+      </div>
+
+      {/* Action Buttons */}
+      <div className="grid grid-cols-2 gap-4">
+        <Button onClick={() => setShowPreview(true)} variant="outline">
+          <Eye className="w-4 h-4 mr-2" />
+          Preview Messages
+        </Button>
+
+        <Button onClick={() => downloadAllAsZip(uploadId)}>
+          <Download className="w-4 h-4 mr-2" />
+          Download as ZIP
+        </Button>
+
+        <Button onClick={() => copyAllMessages(uploadId)} variant="outline">
+          <Copy className="w-4 h-4 mr-2" />
+          Copy All to Clipboard
+        </Button>
+
+        <Button onClick={() => exportMetadataAsCSV(uploadId)} variant="outline">
+          <FileSpreadsheet className="w-4 h-4 mr-2" />
+          Export Metadata CSV
+        </Button>
+      </div>
+
+      {/* Close Button - Triggers Dashboard Refresh */}
+      <Button onClick={handleCloseWizard} className="w-full">
+        Close Wizard
+      </Button>
+
+      {/* Preview Modal */}
+      <HL7PreviewModal
+        uploadId={uploadId}
+        isOpen={showPreview}
+        onClose={() => setShowPreview(false)}
+      />
+    </div>
+  );
+}
+```
+
+---
+
 ### Frontend Dependencies Summary
 
 ```bash
