@@ -1,6 +1,6 @@
 # Interface Wizard Backend API Documentation
 
-**Version:** 4.0 (Enhanced with Download Endpoint)
+**Version:** 4.0
 **Last Updated:** January 7, 2026
 **Backend Framework:** FastAPI 0.109+
 **Base URL:** `http://localhost:8000`
@@ -10,18 +10,17 @@
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [What's New in v4.0](#whats-new-in-v40)
-3. [Key Features](#key-features)
-4. [Technology Stack](#technology-stack)
-5. [Quick Start](#quick-start)
-6. [Understanding HL7 ADT Messages](#understanding-hl7-adt-messages)
-7. [Intelligent Column Mapping](#intelligent-column-mapping)
-8. [API Endpoints Reference](#api-endpoints-reference)
-9. [Complete End-to-End Examples](#complete-end-to-end-examples)
-10. [Data Models](#data-models)
-11. [CSV/Excel File Format](#csvexcel-file-format)
-12. [Error Handling](#error-handling)
-13. [Testing & Troubleshooting](#testing--troubleshooting)
+2. [Key Features](#key-features)
+3. [Technology Stack](#technology-stack)
+4. [Quick Start](#quick-start)
+5. [Understanding HL7 ADT Messages](#understanding-hl7-adt-messages)
+6. [Intelligent Column Mapping](#intelligent-column-mapping)
+7. [API Endpoints Reference](#api-endpoints-reference)
+8. [Complete End-to-End Examples](#complete-end-to-end-examples)
+9. [Data Models](#data-models)
+10. [CSV/Excel File Format](#csvexcel-file-format)
+11. [Error Handling](#error-handling)
+12. [Testing & Troubleshooting](#testing--troubleshooting)
 
 ---
 
@@ -111,140 +110,6 @@
 
 ---
 
-## What's New in v4.0
-
-### 🎯 New Features
-
-#### 1. **HL7 Message Download Endpoint** (NEW!)
-
-**Problem**: After processing, users had no way to retrieve the generated HL7 messages for preview, archival, or troubleshooting.
-
-**Solution**: New `/api/upload/{upload_id}/download` endpoint that returns all generated HL7 messages as JSON.
-
-**Benefits:**
-- ✅ **Preview Messages**: Display HL7 content in UI before download
-- ✅ **Flexible Downloads**: Download individually or create ZIP in browser
-- ✅ **Copy to Clipboard**: Quick access for testing and debugging
-- ✅ **Export Metadata**: Track message details in CSV format
-- ✅ **UI Control**: Frontend team has complete flexibility
-
-**Example Response:**
-```json
-{
-  "upload_id": "662d9ed4-0c10-4417-bec6-1d1416755cc0",
-  "total_messages": 10,
-  "messages": [
-    {
-      "mrn": "MRN001",
-      "trigger_event": "ADT^A04",
-      "patient_name": "Doe^John",
-      "hl7_message": "MSH|^~\\&|InterfaceWizard|...",
-      "suggested_filename": "MRN001_ADT_A04.hl7"
-    }
-  ]
-}
-```
-
-**UI Capabilities Enabled:**
-1. **Preview Modal** - Display messages with syntax highlighting
-2. **ZIP Download** - Create ZIP file in browser using JSZip
-3. **Table View** - Show all messages in searchable table
-4. **Clipboard Copy** - One-click copy for testing
-5. **CSV Export** - Export message metadata for tracking
-
-See [Section 8.7](#7-get-apiuploadupload_iddownload) for full API specification.
-
----
-
-### 🚀 Continued from v3.0
-
-#### 2. **AI-Powered Column Mapping** (v3.0)
-
-**Problem**: CSV files have inconsistent column names like "Patient First Name", "Pateint First Name" (typo), "First Name", "fname", etc.
-
-**Old Solution (v2.0)**: Hardcoded every possible variation
-```python
-# Had to manually add every variation:
-COLUMN_MAPPINGS = {
-    "firstName": ["first_name", "fname", "first name", "patient first name", "given name", ...]
-}
-# Impossible to cover all variations!
-```
-
-**New Solution (v3.0)**: Use OpenAI GPT-4o-mini to intelligently understand column semantics
-```python
-# AI automatically understands ANY reasonable column name:
-"Patient Last Name" → lastName ✅
-"Pateint First Name" → firstName ✅ (detects typo)
-"E-mail Address" → email ✅
-"Phone #" → phone ✅
-# No hardcoding needed!
-```
-
-**Benefits:**
-- ✅ Handles **unlimited column name variations** (no hardcoding)
-- ✅ **Typo tolerant** - AI understands "Pateint" means "Patient"
-- ✅ **Context aware** - Distinguishes "Full Name" vs "Last Name"
-- ✅ **Confidence scores** - Shows how certain the mapping is
-- ✅ **Automatic fallback** - Uses fuzzy matching if AI unavailable
-
-#### 3. **Programmatic HL7 Generation** (v3.0)
-
-**Problem**: v2.0 used AI to generate HL7 messages, which was slow and unreliable.
-
-**Old Solution**:
-- Asked GPT-4 to generate HL7 messages from patient data
-- **Slow**: 1-2 seconds per patient
-- **Expensive**: API cost for every patient
-- **Unreliable**: AI sometimes formatted messages incorrectly
-
-**New Solution**: Deterministic programmatic HL7 builder
-```python
-def build_hl7_message_programmatically(patient, trigger_event="ADT-A04"):
-    """
-    Builds HL7 v2.5 message using code (NO AI needed!)
-    - Fast: <10ms per patient
-    - Free: No API costs
-    - Reliable: 100% spec-compliant
-    """
-```
-
-**Benefits:**
-- ✅ **10x faster** (0.1s vs 1-2s per patient)
-- ✅ **100% reliable** - Always generates spec-compliant HL7
-- ✅ **Free** - No API costs for HL7 generation
-- ✅ **Supports all ADT types** - A01, A04, A08, A28, A31
-
-#### 4. **Two-Phase Workflow** (v3.0)
-
-**Problem**: v1.0 processed files immediately without user review.
-
-**New Solution**: Preview before processing
-```
-Phase 1: Upload → Parse → Validate → Preview (user reviews data)
-Phase 2: Confirm → Generate HL7 → Send to Mirth (user confirms)
-```
-
-**Benefits:**
-- ✅ User can review parsed data before sending
-- ✅ Can deselect invalid patients
-- ✅ Prevents accidental data submission
-- ✅ Shows validation errors upfront
-
-#### 5. **Real-Time Progress Tracking** (v3.0)
-
-Uses Server-Sent Events (SSE) to stream live updates:
-```
-Step 1: Initializing... (0%)
-Step 2: Generating HL7 messages (1/10)... (20%)
-Step 3: Generating HL7 messages (2/10)... (30%)
-Step 4: Sending to Mirth (1/10)... (50%)
-...
-Step 6: Complete! (100%)
-```
-
----
-
 ## Key Features
 
 ### 1. Intelligent Column Mapping (AI-Powered)
@@ -263,9 +128,24 @@ Step 6: Complete! (100%)
 | `Phone #` | `phone` | 95% | AI symbol understanding |
 | `DOB` | `dateOfBirth` | 100% | AI abbreviation knowledge |
 
+**Benefits:**
+- Handles unlimited column name variations
+- Typo tolerant - AI understands "Pateint" means "Patient"
+- Context aware - Distinguishes "Full Name" vs "Last Name"
+- Confidence scores show certainty of mapping
+- Automatic fallback to fuzzy matching if AI unavailable
+
 See [Intelligent Column Mapping](#intelligent-column-mapping) for details.
 
-### 2. Flexible HL7 Message Types
+### 2. Programmatic HL7 Generation
+
+Fast, deterministic HL7 v2.5 message builder:
+- **Fast**: <10ms per patient (no AI needed for message generation)
+- **Reliable**: 100% spec-compliant HL7 messages
+- **Cost-effective**: No API costs for HL7 generation
+- **Comprehensive**: Supports all ADT message types (A01, A04, A08, A28, A31)
+
+### 3. Flexible HL7 Message Types
 
 **All ADT (Admit/Discharge/Transfer) trigger events supported:**
 
@@ -278,14 +158,40 @@ See [Intelligent Column Mapping](#intelligent-column-mapping) for details.
 | **ADT^A31** | Update Person Info | Outpatient (O) | Update existing person |
 
 **Why ADT-A04 is Default:**
-- ✅ Most commonly used for bulk patient registration
-- ✅ Works for outpatient registration (most use cases)
-- ✅ Compatible with most EHR systems
-- ✅ Simpler than A01 (no admission details needed)
+- Most commonly used for bulk patient registration
+- Works for outpatient registration (most use cases)
+- Compatible with most EHR systems
+- Simpler than A01 (no admission details needed)
 
 See [Understanding HL7 ADT Messages](#understanding-hl7-adt-messages) for details.
 
-### 3. Multi-Format Support
+### 4. Two-Phase Workflow
+
+Preview before processing:
+```
+Phase 1: Upload → Parse → Validate → Preview (user reviews data)
+Phase 2: Confirm → Generate HL7 → Send to Mirth (user confirms)
+```
+
+**Benefits:**
+- User can review parsed data before sending
+- Can deselect invalid patients
+- Prevents accidental data submission
+- Shows validation errors upfront
+
+### 5. Real-Time Progress Tracking
+
+Uses Server-Sent Events (SSE) to stream live updates:
+```
+Step 1: Initializing... (0%)
+Step 2: Generating HL7 messages (1/10)... (20%)
+Step 3: Generating HL7 messages (2/10)... (30%)
+Step 4: Sending to Mirth (1/10)... (50%)
+...
+Step 6: Complete! (100%)
+```
+
+### 6. Multi-Format Support
 
 **Supported File Types:**
 - CSV (.csv)
@@ -300,7 +206,7 @@ See [Understanding HL7 ADT Messages](#understanding-hl7-adt-messages) for detail
 - `DD/MM/YYYY`
 - `MM-DD-YYYY`
 
-### 4. 3-Tier Data Validation
+### 7. 3-Tier Data Validation
 
 **Tier 1 (Critical)** - Must have:
 - MRN (Medical Record Number)
@@ -330,7 +236,7 @@ See [Understanding HL7 ADT Messages](#understanding-hl7-adt-messages) for detail
 }
 ```
 
-### 5. UUID Tracking
+### 8. UUID Tracking
 
 Every patient record gets a unique UUID (v4) for tracking:
 ```
@@ -342,23 +248,23 @@ ZPI|a1b2c3d4-e5f6-7890-abcd-ef1234567890
 ```
 
 **Benefits:**
-- ✅ Track specific patient records across systems
-- ✅ Correlate upload batch with database records
-- ✅ Debugging and audit trails
-- ✅ Prevent duplicate processing
+- Track specific patient records across systems
+- Correlate upload batch with database records
+- Debugging and audit trails
+- Prevent duplicate processing
 
-### 6. HL7 Message Download & Export (NEW in v4.0)
+### 9. HL7 Message Download & Export
 
 **JSON-Based Download**:
 - Returns structured JSON with all generated HL7 messages
 - Each message includes: MRN, patient name, trigger event, full HL7 content, suggested filename
 
 **UI Capabilities**:
-- ✅ **Preview** - Display messages before download
-- ✅ **Individual Download** - Download specific messages
-- ✅ **ZIP Archive** - Create ZIP in browser (no backend needed)
-- ✅ **Clipboard Copy** - Quick copy for testing
-- ✅ **Metadata Export** - CSV export for tracking
+- **Preview** - Display messages before download
+- **Individual Download** - Download specific messages
+- **ZIP Archive** - Create ZIP in browser (no backend needed)
+- **Clipboard Copy** - Quick copy for testing
+- **Metadata Export** - CSV export for tracking
 
 ---
 
@@ -618,15 +524,15 @@ Patient "John Doe" is admitted to hospital for surgery
 - Bulk patient registration
 - Creating new patient records
 - Outpatient registration
-- **Most common for CSV uploads**
+- Most common for CSV uploads
 
 **Patient Class**: `O` (Outpatient)
 
 **Why Default**:
-- ✅ Simple - no admission details needed
-- ✅ Works for most use cases
-- ✅ Widely supported by EHR systems
-- ✅ Perfect for bulk imports
+- Simple - no admission details needed
+- Works for most use cases
+- Widely supported by EHR systems
+- Perfect for bulk imports
 
 **Example Use Case**:
 ```
@@ -801,13 +707,13 @@ COLUMN_MAPPINGS = {
 
 **Advantages:**
 
-✅ **Unlimited Variations**: Works with ANY reasonable column name
-✅ **Typo Tolerance**: AI understands "Pateint" = "Patient"
-✅ **Context Awareness**: Distinguishes "Full Name" vs "Last Name"
-✅ **Multi-Language**: Can understand non-English column names
-✅ **Confidence Scores**: Shows certainty of mapping
-✅ **Warnings**: Flags ambiguous or unusual mappings
-✅ **Self-Improving**: Gets better as AI models improve
+- **Unlimited Variations**: Works with ANY reasonable column name
+- **Typo Tolerance**: AI understands "Pateint" = "Patient"
+- **Context Awareness**: Distinguishes "Full Name" vs "Last Name"
+- **Multi-Language**: Can understand non-English column names
+- **Confidence Scores**: Shows certainty of mapping
+- **Warnings**: Flags ambiguous or unusual mappings
+- **Self-Improving**: Gets better as AI models improve
 
 **Cost**: ~$0.0001 per file (very cheap)
 
@@ -861,16 +767,16 @@ Input: `"Patient Last Name"`
 
 **Advantages:**
 
-✅ **No API Costs**: Completely free
-✅ **Fast**: <1ms per column
-✅ **Offline**: Works without internet
-✅ **Predictable**: Deterministic results
+- **No API Costs**: Completely free
+- **Fast**: <1ms per column
+- **Offline**: Works without internet
+- **Predictable**: Deterministic results
 
 **Limitations:**
 
-❌ Less flexible than AI
-❌ Can't handle complex variations
-❌ Limited to predefined keywords
+- Less flexible than AI
+- Can't handle complex variations
+- Limited to predefined keywords
 
 ### When Each Strategy is Used
 
@@ -960,7 +866,7 @@ curl -X POST http://localhost:8000/api/upload \
 | POST | `/api/upload/confirm` | Process selected patients | Phase 2 |
 | GET | `/api/upload/{id}/stream` | Real-time progress (SSE) | Phase 2 |
 | GET | `/api/upload/{id}/results` | Get final results | Phase 2 |
-| GET | `/api/upload/{id}/download` | **Download HL7 messages (NEW!)** | **Phase 2** |
+| GET | `/api/upload/{id}/download` | Download HL7 messages | Phase 2 |
 | GET | `/api/dashboard/stats` | Dashboard statistics | - |
 | GET | `/health` | Basic health check | - |
 
@@ -1199,58 +1105,11 @@ curl http://localhost:8000/api/upload/upload_1735559400_abc123/results
 
 ---
 
-### 5. GET /api/dashboard/stats
-
-**Purpose**: Retrieve aggregated statistics across all uploads.
-
-**Request**:
-
-```bash
-curl http://localhost:8000/api/dashboard/stats
-```
-
-**Response** (200 OK):
-
-```json
-{
-  "total_processed": 150,
-  "hl7_messages_generated": 148,
-  "successful_sends": 145,
-  "failed_sends": 3,
-  "success_rate": 96.67
-}
-```
-
----
-
-### 6. GET /health
-
-**Purpose**: Basic server health check.
-
-**Request**:
-
-```bash
-curl http://localhost:8000/health
-```
-
-**Response** (200 OK):
-
-```json
-{
-  "status": "healthy",
-  "message": "Interface Wizard API is running"
-}
-```
-
----
-
-### 7. GET /api/upload/{upload_id}/download
+### 5. GET /api/upload/{upload_id}/download
 
 **Purpose**: Download all generated HL7 messages as JSON for preview, download, or export.
 
 **Phase**: 2 (After Processing)
-
-**NEW in v4.0** 🎯
 
 **Request**:
 
@@ -1333,17 +1192,62 @@ curl http://localhost:8000/api/upload/662d9ed4-0c10-4417-bec6-1d1416755cc0/downl
 
 ---
 
+### 6. GET /api/dashboard/stats
+
+**Purpose**: Retrieve aggregated statistics across all uploads.
+
+**Request**:
+
+```bash
+curl http://localhost:8000/api/dashboard/stats
+```
+
+**Response** (200 OK):
+
+```json
+{
+  "total_processed": 150,
+  "hl7_messages_generated": 148,
+  "successful_sends": 145,
+  "failed_sends": 3,
+  "success_rate": 96.67
+}
+```
+
+---
+
+### 7. GET /health
+
+**Purpose**: Basic server health check.
+
+**Request**:
+
+```bash
+curl http://localhost:8000/health
+```
+
+**Response** (200 OK):
+
+```json
+{
+  "status": "healthy",
+  "message": "Interface Wizard API is running"
+}
+```
+
+---
+
 ## UI Implementation Guide for Download Endpoint
 
 ### Overview
 
 The download endpoint returns **JSON** instead of a binary file, giving the UI team complete flexibility to:
-- ✅ Preview messages in modals
-- ✅ Download as individual files
-- ✅ Create ZIP archives in the browser
-- ✅ Copy to clipboard
-- ✅ Display in tables
-- ✅ Export metadata
+- Preview messages in modals
+- Download as individual files
+- Create ZIP archives in the browser
+- Copy to clipboard
+- Display in tables
+- Export metadata
 
 ### 1. Preview Modal Component
 
@@ -1812,7 +1716,7 @@ print(f"\n✅ Processing Complete!")
 print(f"   Success: {results['successful']}/{results['total_processed']}")
 print(f"   Time: {results['processing_time_seconds']}s")
 
-# Step 5: Download HL7 messages (NEW!)
+# Step 5: Download HL7 messages
 print("\nStep 5: Downloading HL7 messages...")
 response = requests.get(f'{BASE_URL}/api/upload/{upload_id}/download')
 download = response.json()
@@ -1865,7 +1769,7 @@ echo "Step 4: Getting results..."
 curl $BASE_URL/api/upload/$UPLOAD_ID/results -o results.json
 cat results.json | jq '{status, total: .total_processed, success: .successful}'
 
-# 5. Download HL7 messages (NEW!)
+# 5. Download HL7 messages
 echo "Step 5: Downloading HL7 messages..."
 curl $BASE_URL/api/upload/$UPLOAD_ID/download -o download.json
 cat download.json | jq '{total: .total_messages, first_patient: .messages[0].patient_name}'
@@ -1898,7 +1802,7 @@ class PatientRecord(BaseModel):
     validation_messages: List[str] = [] # Validation errors
 ```
 
-### HL7MessageDownload (NEW in v4.0)
+### HL7MessageDownload
 
 ```python
 class HL7MessageDownload(BaseModel):
@@ -1982,7 +1886,7 @@ sleep 5
 # 4. Results
 curl http://localhost:8000/api/upload/$UPLOAD_ID/results | jq '.'
 
-# 5. Download (NEW!)
+# 5. Download
 curl http://localhost:8000/api/upload/$UPLOAD_ID/download | jq '.'
 ```
 
@@ -2018,36 +1922,21 @@ This documentation provides complete coverage of the Interface Wizard Backend AP
 - **Swagger UI**: http://localhost:8000/docs
 - **ReDoc**: http://localhost:8000/redoc
 
-### Key Improvements in v4.0
+### Summary of Key Features
 
-**NEW in v4.0**:
-- ✅ **Download Endpoint** - Retrieve generated HL7 messages as JSON
-- ✅ **UI Flexibility** - Frontend controls preview, download, copy, export
-- ✅ **Browser-Side ZIP** - No backend processing for ZIP creation
-- ✅ **Multiple Export Formats** - Individual files, ZIP, clipboard, CSV metadata
-
-**Continued from v3.0**:
-- ✅ AI-powered column mapping
-- ✅ Programmatic HL7 generation (10x faster)
-- ✅ Support for all ADT trigger events
-- ✅ Real-time progress streaming
-- ✅ Comprehensive validation
+- **AI-powered column mapping** - Handles any CSV format with typo tolerance
+- **Programmatic HL7 generation** - Fast, reliable, cost-effective
+- **Support for all ADT trigger events** - A01, A04, A08, A28, A31
+- **Two-phase workflow** - Preview before processing
+- **Real-time progress streaming** - SSE-based status updates
+- **Comprehensive validation** - 3-tier validation system
+- **HL7 message download** - JSON response with multiple export options
+- **UUID tracking** - Full audit trail for all patients
 
 ---
 
-## Version History
-
-| Version | Date | Major Changes |
-|---------|------|---------------|
-| **4.0** | Jan 7, 2026 | Added download endpoint for HL7 messages (JSON response) |
-| **3.0** | Dec 30, 2025 | AI column mapping, programmatic HL7 builder, SSE streaming |
-| **2.0** | - | AI-based HL7 generation (slow, deprecated) |
-| **1.0** | - | Initial release with basic CSV processing |
-
----
-
-**Document Version**: 4.0 (Enhanced with Download Endpoint)
+**Document Version**: 4.0
 **Last Updated**: January 7, 2026
 **Author**: Shirisha G
 
-**For UI Implementation Details**: See [API-v3.0.1-HL7-Download-Endpoint.md](./API-v3.0.1-HL7-Download-Endpoint.md) for complete UI code examples and integration patterns.
+**For UI Implementation Details**: See [API-v3.0.1-HL7-Download-Endpoint.md](./API-v3.0.1-HL7-Download-Endpoint.md) for additional UI code examples and integration patterns.
